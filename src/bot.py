@@ -10,6 +10,7 @@ from src.models import User, Group, GroupMember, GroupCreator
 from src.utils import generate_unique_invite_code
 from sqlalchemy import select, insert
 import os
+import logging
 
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
@@ -54,6 +55,7 @@ async def get_user_groups(user_id: int):
             select(Group).join(GroupMember).join(User).where(User.telegram_user_id == user_id)
         )
         groups = result.scalars().all()
+        logging.info(f"[get_user_groups] user_id={user_id}, groups={[g.name for g in groups]}")
         return [{"id": g.id, "name": g.name} for g in groups]
 
 async def is_onboarded(user_id: int, group_id: int):
@@ -92,6 +94,8 @@ async def create_group(user_id: int, name: str, description: str):
         group = Group(name=name, description=description, invite_code=invite_code, creator_user_id=user.id)
         session.add(group)
         await session.flush()
+        member = GroupMember(user_id=user.id, group_id=group.id)
+        session.add(member)
         await session.commit()
         return {"id": group.id, "name": group.name, "invite_code": group.invite_code}
 
@@ -165,6 +169,7 @@ async def start(message: types.Message, state: FSMContext):
         return
     groups = await get_user_groups(user_id)
     is_creator = await is_group_creator(user_id)
+    logging.info(f"[start] user_id={user_id}, is_creator={is_creator}, groups={groups}")
     if not groups:
         if is_creator:
             await message.answer("👋 Welcome, admin!", reply_markup=get_admin_keyboard([]))
