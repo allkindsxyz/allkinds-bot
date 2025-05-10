@@ -1,0 +1,44 @@
+---
+description: 
+globs: 
+alwaysApply: true
+---
+# Project Overview
+## Project Name: Allkinds Bot
+## Type: Telegram Bot System
+## Purpose: Help people connect with like-minded individuals based on shared values, interests, and worldview.
+
+# How It Works
+## Group Creation
+A group is created by an administrator (the "creator") within the main Allkinds Bot.
+
+## Inviting Users
+The creator invites others to join the group via a deep link or a unique 5-character invite code.
+
+## Question Exchange & Matching
+
+Group members ask yes/no-based questions or statements.
+
+Answer options include: Strong No, No, Skip, Yes, Strong Yes.
+
+Users answer their own and others’ questions.
+
+Based on answer similarity, users receive recommendations of others who match them most closely.
+
+## One-on-One Communication
+
+When a match is found, both users are redirected to a secondary bot: Allkinds Chat Bot.
+
+This bot facilitates deeper conversations and helps users decide whether to continue communication.
+
+# AI-Powered Features
+The system uses OpenAI models for:
+
+Duplicate Question Detection: Prevents spam and repeat questions.
+
+Content Moderation: Filters out inappropriate content (e.g., topics involving drugs, violence, hate speech, etc.).
+
+Smart Question Routing: Prioritizes and suggests questions that are more relevant to each user.
+
+Conversation Kickstarters: Surfaces deeper insights from shared answers to help users get to know each other on a meaningful level.
+
