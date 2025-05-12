@@ -8,10 +8,12 @@ class User(Base):
     __tablename__ = 'users'
     id = Column(Integer, primary_key=True)
     telegram_user_id = Column(BigInteger, unique=True, nullable=False)
+    current_group_id = Column(Integer, ForeignKey('groups.id'), nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     
     memberships = relationship('GroupMember', back_populates='user')
-    created_groups = relationship('Group', back_populates='creator')
+    created_groups = relationship('Group', back_populates='creator', foreign_keys='Group.creator_user_id')
+    # current_group = relationship('Group', foreign_keys=[current_group_id])  # если потребуется
 
 class Group(Base):
     __tablename__ = 'groups'
@@ -22,7 +24,7 @@ class Group(Base):
     creator_user_id = Column(Integer, ForeignKey('users.id'))
     created_at = Column(DateTime, default=datetime.utcnow)
     
-    creator = relationship('User', back_populates='created_groups')
+    creator = relationship('User', back_populates='created_groups', foreign_keys=[creator_user_id])
     members = relationship('GroupMember', back_populates='group')
 
 class GroupMember(Base):
@@ -48,4 +50,30 @@ class GroupCreator(Base):
     __tablename__ = 'group_creators'
     id = Column(Integer, primary_key=True)
     user_id = Column(Integer, ForeignKey('users.id'), unique=True)
-    created_at = Column(DateTime, default=datetime.utcnow) 
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+class Question(Base):
+    __tablename__ = 'questions'
+    id = Column(Integer, primary_key=True)
+    group_id = Column(Integer, ForeignKey('groups.id', ondelete='CASCADE'), nullable=False)
+    author_id = Column(Integer, ForeignKey('users.id', ondelete='CASCADE'), nullable=False)
+    text = Column(Text, nullable=False)
+    embedding = Column(String, nullable=True)  # для future AI
+    created_at = Column(DateTime, default=datetime.utcnow)
+    is_deleted = Column(Integer, default=0)  # soft delete
+
+    group = relationship('Group')
+    author = relationship('User')
+    answers = relationship('Answer', back_populates='question')
+
+class Answer(Base):
+    __tablename__ = 'answers'
+    id = Column(Integer, primary_key=True)
+    question_id = Column(Integer, ForeignKey('questions.id', ondelete='CASCADE'), nullable=False)
+    user_id = Column(Integer, ForeignKey('users.id', ondelete='CASCADE'), nullable=False)
+    value = Column(Integer, nullable=True)  # -2, -1, 0, 1, 2
+    is_skipped = Column(Integer, default=0)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    question = relationship('Question', back_populates='answers')
+    user = relationship('User') 

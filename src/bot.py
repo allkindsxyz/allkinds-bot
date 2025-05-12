@@ -6,11 +6,13 @@ from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from src.config import BOT_TOKEN, ADMIN_USER_ID
 from src.db import AsyncSessionLocal
-from src.models import User, Group, GroupMember, GroupCreator
+from src.models import User, Group, GroupMember, GroupCreator, Question, Answer
 from src.utils import generate_unique_invite_code
-from sqlalchemy import select, insert
+from sqlalchemy import select, insert, and_, or_
 import os
 import logging
+import re
+from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 logging.basicConfig(level=logging.INFO)
 
@@ -31,20 +33,20 @@ class JoinGroup(StatesGroup):
     code = State()
 
 # Кнопки
-create_group_btn = InlineKeyboardButton(text="Create a group", callback_data="create_group")
-join_group_btn = InlineKeyboardButton(text="Join group with code", callback_data="join_group")
+create_group_btn = InlineKeyboardButton(text="Create a new group", callback_data="create_new_group")
+join_group_btn = InlineKeyboardButton(text="Join another group with code", callback_data="join_another_group_with_code")
 
 def get_admin_keyboard(groups):
     kb = [[create_group_btn, join_group_btn]]
     for g in groups:
-        kb.append([InlineKeyboardButton(text=f"Go to {g['name']}", callback_data=f"go_group_{g['id']}")])
+        kb.append([InlineKeyboardButton(text=f"Switch to {g['name']}", callback_data=f"switch_to_group_{g['id']}" )])
     return InlineKeyboardMarkup(inline_keyboard=kb)
 
 def get_user_keyboard():
     return InlineKeyboardMarkup(inline_keyboard=[[join_group_btn]])
 
 def go_to_group_keyboard(group_id, group_name):
-    return InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text=f"Go to {group_name}", callback_data=f"go_group_{group_id}")]])
+    return InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text=f"Switch to {group_name}", callback_data=f"switch_to_group_{group_id}")]])
 
 def location_keyboard():
     return ReplyKeyboardMarkup(
@@ -159,6 +161,58 @@ async def on_startup(dispatcher):
     ]
     await bot.set_my_commands(commands)
 
+async def show_user_groups(message, user_id, state):
+    async with AsyncSessionLocal() as session:
+        user = await session.execute(select(User).where(User.telegram_user_id == user_id))
+        user = user.scalar()
+        if not user:
+            await message.answer("You are not registered. Use /start.")
+            return
+        groups = await session.execute(
+            select(Group).join(GroupMember).where(GroupMember.user_id == user.id)
+        )
+        groups = groups.scalars().all()
+        if not groups:
+            is_creator = await is_group_creator(user_id)
+            if is_creator:
+                kb = InlineKeyboardMarkup(inline_keyboard=[[create_group_btn], [join_group_btn]])
+            else:
+                kb = get_user_keyboard()
+            await message.answer("You are not in any groups.", reply_markup=kb)
+            return
+        current_group = None
+        if user.current_group_id:
+            current_group = next((g for g in groups if g.id == user.current_group_id), None)
+        if not current_group:
+            current_group = groups[0]
+            user.current_group_id = current_group.id
+            await session.commit()
+        bot_info = await bot.get_me()
+        deeplink = get_group_deeplink(bot_info.username, current_group.invite_code)
+        text = f"You are in <b>{current_group.name}</b>\n{current_group.description}\n\nInvite link: {deeplink}\nInvite code: <code>{current_group.invite_code}</code>"
+        is_creator = (current_group.creator_user_id == user.id)
+        kb = get_group_main_keyboard(user.id, current_group.id, current_group.name, is_creator)
+        # Пустая строка-разделитель
+        kb.inline_keyboard.append([])
+        # Кнопки Switch to <group>
+        other_groups = [g for g in groups if g.id != current_group.id]
+        for g in other_groups:
+            kb.inline_keyboard.append([InlineKeyboardButton(text=f"Switch to {g.name}", callback_data=f"switch_to_group_{g.id}")])
+        # Join и Create — в самом низу
+        if await is_group_creator(user_id):
+            kb.inline_keyboard.append([create_group_btn])
+        kb.inline_keyboard.append([join_group_btn])
+        sent = await message.answer(text, reply_markup=kb, parse_mode="HTML")
+        data = await state.get_data()
+        ids = data.get("my_groups_msg_ids", [])
+        ids.append(sent.message_id)
+        await state.update_data(my_groups_msg_ids=ids)
+
+@dp.message(Command("mygroups"))
+async def my_groups(message: types.Message, state: FSMContext):
+    user_id = message.from_user.id
+    await show_user_groups(message, user_id, state)
+
 @dp.message(CommandStart())
 async def start(message: types.Message, state: FSMContext):
     user_id = message.from_user.id
@@ -172,7 +226,15 @@ async def start(message: types.Message, state: FSMContext):
         onboarded = await is_onboarded(user_id, group["id"])
         if onboarded:
             balance = await get_group_balance(user_id, group["id"])
-            await message.answer(f"Welcome back to {group['name']}. Your balance is {balance} points.")
+            await message.answer(f"Welcome back to {group['name']}. Your balance is {balance} points.",
+                reply_markup=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="Load answered questions", callback_data="load_answered_questions")]]))
+            # Показываем первый неотвеченный вопрос
+            async with AsyncSessionLocal() as session:
+                user = await session.execute(select(User).where(User.telegram_user_id == user_id))
+                user = user.scalar()
+                next_q = await get_next_unanswered_question(session, group["id"], user.id)
+                if next_q:
+                    await send_question_to_user(bot, user, next_q)
             return
         await message.answer(f"Joining '{group['name']}'. Let's set up your profile!\nEnter your nickname:", reply_markup=ReplyKeyboardRemove())
         await state.update_data(group_id=group["id"])
@@ -181,7 +243,6 @@ async def start(message: types.Message, state: FSMContext):
     groups = await get_user_groups(user_id)
     is_creator = await is_group_creator(user_id)
     logging.info(f"[start] user_id={user_id}, is_creator={is_creator}, groups={groups}")
-    # Логируем подробную информацию о членстве
     async with AsyncSessionLocal() as session:
         user = await session.execute(select(User).where(User.telegram_user_id == user_id))
         user = user.scalar()
@@ -202,7 +263,15 @@ async def start(message: types.Message, state: FSMContext):
         onboarded = await is_onboarded(user_id, group["id"])
         if onboarded:
             balance = await get_group_balance(user_id, group["id"])
-            await message.answer(f"Welcome back to {group['name']}. Your balance is {balance} points.")
+            await message.answer(f"Welcome back to {group['name']}. Your balance is {balance} points.",
+                reply_markup=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="Load answered questions", callback_data="load_answered_questions")]]))
+            # Показываем первый неотвеченный вопрос
+            async with AsyncSessionLocal() as session:
+                user = await session.execute(select(User).where(User.telegram_user_id == user_id))
+                user = user.scalar()
+                next_q = await get_next_unanswered_question(session, group["id"], user.id)
+                if next_q:
+                    await send_question_to_user(bot, user, next_q)
             return
         await message.answer(f"You have one group. Redirecting to onboarding for '{group['name']}'...", reply_markup=ReplyKeyboardRemove())
         await state.update_data(group_id=group["id"])
@@ -210,11 +279,20 @@ async def start(message: types.Message, state: FSMContext):
         await message.answer("Enter your nickname:")
         return
     kb = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text=f"Go to {g['name']}", callback_data=f"go_group_{g['id']}")] for g in groups
+        [InlineKeyboardButton(text=f"Switch to {g['name']}", callback_data=f"switch_to_group_{g['id']}")] for g in groups
     ])
     await message.answer("Select a group:", reply_markup=kb)
+    # Показываем первый неотвеченный вопрос для текущей группы
+    async with AsyncSessionLocal() as session:
+        user = await session.execute(select(User).where(User.telegram_user_id == user_id))
+        user = user.scalar()
+        group_id = user.current_group_id or (groups[0]["id"] if groups else None)
+        if group_id:
+            next_q = await get_next_unanswered_question(session, group_id, user.id)
+            if next_q:
+                await send_question_to_user(bot, user, next_q)
 
-@dp.callback_query(F.data == "create_group")
+@dp.callback_query(F.data == "create_new_group")
 async def cb_create_group(callback: types.CallbackQuery, state: FSMContext):
     is_creator = await is_group_creator(callback.from_user.id)
     if not is_creator:
@@ -250,9 +328,39 @@ async def group_desc_step(message: types.Message, state: FSMContext):
         reply_markup=go_to_group_keyboard(group["id"], group["name"]))
     await state.clear()
 
-@dp.callback_query(F.data.startswith("go_group_"))
-async def cb_go_group(callback: types.CallbackQuery, state: FSMContext):
+@dp.callback_query(F.data.startswith("switch_to_group_"))
+async def cb_switch_to_group(callback: types.CallbackQuery, state: FSMContext):
     group_id = int(callback.data.split("_")[-1])
+    user_id = callback.from_user.id
+    async with AsyncSessionLocal() as session:
+        user = await session.execute(select(User).where(User.telegram_user_id == user_id))
+        user = user.scalar()
+        member = await session.execute(select(GroupMember).where(GroupMember.user_id == user.id, GroupMember.group_id == group_id))
+        member = member.scalar()
+        onboarded = member and member.nickname and (member.geolocation_lat or member.city) and member.photo_url
+        if onboarded:
+            user.current_group_id = group_id
+            await session.commit()
+            await callback.message.delete()
+            # Получаем group_name и all_groups_count заранее
+            group_obj = await session.execute(select(Group).where(Group.id == group_id))
+            group_obj = group_obj.scalar()
+            group_name = group_obj.name if group_obj else None
+            memberships = await session.execute(select(GroupMember).where(GroupMember.user_id == user.id))
+            memberships = memberships.scalars().all()
+            all_groups_count = len(memberships)
+            # Сначала Load answered questions, потом первый неотвеченный вопрос
+            await callback.message.answer(
+                "View your answered questions:",
+                reply_markup=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="Load answered questions", callback_data="load_answered_questions")]])
+            )
+            next_q = await get_next_unanswered_question(session, group_id, user.id)
+            if next_q:
+                await send_question_to_user(callback.bot, user, next_q, group_id=group_id, all_groups_count=all_groups_count, group_name=group_name)
+            else:
+                await callback.message.answer("No new questions in this group.")
+            await callback.answer()
+            return
     await callback.message.answer("Let's set up your profile for this group!\nEnter your nickname:", reply_markup=ReplyKeyboardRemove())
     await state.update_data(group_id=group_id)
     await state.set_state(Onboarding.nickname)
@@ -302,9 +410,25 @@ async def onboarding_location_geo(message: types.Message, state: FSMContext):
             member.geolocation_lat = lat
             member.geolocation_lon = lon
             member.city = None
-            await session.commit()
+        user.current_group_id = group_id
+        await session.commit()
     await message.answer("🎉 Profile setup complete!", reply_markup=ReplyKeyboardRemove())
     await state.clear()
+    async with AsyncSessionLocal() as session:
+        user = await session.execute(select(User).where(User.telegram_user_id == message.from_user.id))
+        user = user.scalar()
+        group_id = None
+        for m in user.memberships:
+            if m.nickname and (m.geolocation_lat or m.city):
+                group_id = m.group_id
+                break
+        if group_id:
+            next_q = await get_next_unanswered_question(session, group_id, user.id)
+            if next_q:
+                logging.info(f"[onboarding_location_geo] Showing first unanswered question to user_id={user.id}, group_id={group_id}, question_id={next_q.id}")
+                await send_question_to_user(bot, user, next_q)
+            else:
+                logging.info(f"[onboarding_location_geo] No unanswered questions for user_id={user.id}, group_id={group_id}")
 
 @dp.message(Onboarding.location)
 async def onboarding_location_city(message: types.Message, state: FSMContext):
@@ -328,11 +452,27 @@ async def onboarding_location_city(message: types.Message, state: FSMContext):
             member.geolocation_lat = None
             member.geolocation_lon = None
             member.city = city
-            await session.commit()
+        user.current_group_id = group_id
+        await session.commit()
     await message.answer("🎉 Profile setup complete!", reply_markup=ReplyKeyboardRemove())
     await state.clear()
+    async with AsyncSessionLocal() as session:
+        user = await session.execute(select(User).where(User.telegram_user_id == message.from_user.id))
+        user = user.scalar()
+        group_id = None
+        for m in user.memberships:
+            if m.nickname and (m.geolocation_lat or m.city):
+                group_id = m.group_id
+                break
+        if group_id:
+            next_q = await get_next_unanswered_question(session, group_id, user.id)
+            if next_q:
+                logging.info(f"[onboarding_location_city] Showing first unanswered question to user_id={user.id}, group_id={group_id}, question_id={next_q.id}")
+                await send_question_to_user(bot, user, next_q)
+            else:
+                logging.info(f"[onboarding_location_city] No unanswered questions for user_id={user.id}, group_id={group_id}")
 
-@dp.callback_query(F.data == "join_group")
+@dp.callback_query(F.data == "join_another_group_with_code")
 async def cb_join_group(callback: types.CallbackQuery, state: FSMContext):
     await callback.message.answer("Enter the 5-character invite code:", reply_markup=ReplyKeyboardRemove())
     await state.set_state(JoinGroup.code)
@@ -353,7 +493,8 @@ async def process_invite_code(message: types.Message, state: FSMContext):
     onboarded = await is_onboarded(user_id, group["id"])
     if onboarded:
         balance = await get_group_balance(user_id, group["id"])
-        await message.answer(f"Welcome back to {group['name']}. Your balance is {balance} points.")
+        await message.answer(f"Welcome back to {group['name']}. Your balance is {balance} points.",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="Load answered questions", callback_data="load_answered_questions")]]))
         await state.clear()
         return
     await message.answer(f"Joining '{group['name']}'. Let's set up your profile!\nEnter your nickname:")
@@ -368,10 +509,10 @@ def get_group_deeplink(bot_username, invite_code):
 def get_group_main_keyboard(user_id, group_id, group_name, is_creator):
     """Return main group keyboard: Delete for creator, Leave for others."""
     if is_creator:
-        kb = [[InlineKeyboardButton(text=f"Delete {group_name}", callback_data=f"confirm_delete_group_{group_id}")], [join_group_btn]]
+        kb = [[InlineKeyboardButton(text=f"Delete {group_name}", callback_data=f"confirm_delete_group_{group_id}")]]
         logging.info(f"[get_group_main_keyboard] creator, group_id={group_id}, callback_data=confirm_delete_group_{group_id}")
     else:
-        kb = [[InlineKeyboardButton(text=f"Leave {group_name}", callback_data=f"confirm_leave_group_{group_id}")], [join_group_btn]]
+        kb = [[InlineKeyboardButton(text=f"Leave {group_name}", callback_data=f"confirm_leave_group_{group_id}")]]
         logging.info(f"[get_group_main_keyboard] member, group_id={group_id}, callback_data=confirm_leave_group_{group_id}")
     return InlineKeyboardMarkup(inline_keyboard=kb)
 
@@ -382,82 +523,6 @@ def get_confirm_delete_keyboard(group_id):
         InlineKeyboardButton(text="Cancel", callback_data=f"delete_group_cancel_{group_id}")
     ]]
     logging.info(f"[get_confirm_delete_keyboard] group_id={group_id}, yes=delete_group_yes_{group_id}, cancel=delete_group_cancel_{group_id}")
-    return InlineKeyboardMarkup(inline_keyboard=kb)
-
-@router.message(Command("mygroups"))
-async def my_groups(message: types.Message, state: FSMContext):
-    """Show user's groups and main group menu."""
-    user_id = message.from_user.id
-    async with AsyncSessionLocal() as session:
-        user = await session.execute(select(User).where(User.telegram_user_id == user_id))
-        user = user.scalar()
-        if not user:
-            await message.answer("You are not registered. Use /start.")
-            return
-        groups = await session.execute(
-            select(Group).join(GroupMember).where(GroupMember.user_id == user.id)
-        )
-        groups = groups.scalars().all()
-        if not groups:
-            # Если админ — показываем кнопку создания группы
-            is_creator = await is_group_creator(user_id)
-            if is_creator:
-                kb = InlineKeyboardMarkup(inline_keyboard=[[create_group_btn], [join_group_btn]])
-            else:
-                kb = get_user_keyboard()
-            await message.answer("You are not in any groups.", reply_markup=kb)
-            return
-        current_group = None
-        if user.current_group_id:
-            current_group = next((g for g in groups if g.id == user.current_group_id), None)
-        if not current_group:
-            current_group = groups[0]
-            user.current_group_id = current_group.id
-            await session.commit()
-        bot_info = await bot.get_me()
-        deeplink = get_group_deeplink(bot_info.username, current_group.invite_code)
-        text = f"You are in <b>{current_group.name}</b>\n{current_group.description}\n\nInvite link: {deeplink}\nInvite code: <code>{current_group.invite_code}</code>"
-        # Проверяем, является ли пользователь создателем этой группы
-        is_creator = (current_group.creator_user_id == user.id)
-        kb = get_group_main_keyboard(user.id, current_group.id, current_group.name, is_creator)
-        # Добавляем кнопку создания группы для админа
-        if await is_group_creator(user_id):
-            kb.inline_keyboard.append([create_group_btn])
-        sent = await message.answer(text, reply_markup=kb, parse_mode="HTML")
-        data = await state.get_data()
-        ids = data.get("my_groups_msg_ids", [])
-        ids.append(sent.message_id)
-        await state.update_data(my_groups_msg_ids=ids)
-
-@router.callback_query(F.data.startswith("goto_group_"))
-async def cb_goto_group(callback: types.CallbackQuery):
-    group_id = int(callback.data.split("_")[-1])
-    user_id = callback.from_user.id
-    async with AsyncSessionLocal() as session:
-        user = await session.execute(select(User).where(User.telegram_user_id == user_id))
-        user = user.scalar()
-        user.current_group_id = group_id
-        await session.commit()
-    await callback.message.delete()
-    await my_groups(callback.message, state=None)
-    await callback.answer()
-
-def get_leave_group_keyboard(group_id, group_name):
-    """Keyboard for main group screen: leave and join buttons."""
-    kb = [
-        [InlineKeyboardButton(text=f"Leave {group_name}", callback_data=f"confirm_leave_group_{group_id}")],
-        [join_group_btn]
-    ]
-    logging.info(f"[get_leave_group_keyboard] group_id={group_id}, callback_data=confirm_leave_group_{group_id}")
-    return InlineKeyboardMarkup(inline_keyboard=kb)
-
-def get_confirm_leave_keyboard(group_id):
-    """Keyboard for confirmation dialog: leave/cancel buttons."""
-    kb = [[
-        InlineKeyboardButton(text="Leave", callback_data=f"leave_group_yes_{group_id}"),
-        InlineKeyboardButton(text="Cancel", callback_data=f"leave_group_cancel_{group_id}")
-    ]]
-    logging.info(f"[get_confirm_leave_keyboard] group_id={group_id}, yes=leave_group_yes_{group_id}, cancel=leave_group_cancel_{group_id}")
     return InlineKeyboardMarkup(inline_keyboard=kb)
 
 @router.callback_query(F.data.startswith("leave_group_yes_"))
@@ -602,6 +667,428 @@ async def cb_delete_group_cancel(callback: types.CallbackQuery, state: FSMContex
     await clear_leave_and_my_groups(callback, state)
     await state.clear()
     await callback.answer()
+
+# --- Question/Answer logic ---
+
+ANSWER_VALUES = [(-2, "👎👎"), (-1, "👎"), (0, "⏭️"), (1, "👍"), (2, "👍👍")]
+ANSWER_VALUE_TO_EMOJI = dict(ANSWER_VALUES)
+
+async def moderate_question(text: str) -> (bool, str):
+    banned = ["drugs", "violence", "hate", "sex"]
+    for word in banned:
+        if word in text.lower():
+            return False, f"Question contains banned topic: {word}"
+    # Если есть кириллица — отключаем модерацию (разрешаем всё)
+    if re.search(r'[а-яА-ЯёЁ]', text):
+        return True, ""
+    # Для английского — старая эвристика
+    t = text.strip().lower()
+    t = re.sub(r'^[\s\.,!?-]+', '', t)
+    yesno_patterns = [
+        r"^(do|does|is|are|was|were|have|has|will|can|should|could|would|may|might|am|did|doesn't|isn't|aren't|won't|can't|didn't|haven't|hasn't)\b",
+    ]
+    if text.strip().endswith("?"):
+        for pat in yesno_patterns:
+            if re.match(pat, t, re.IGNORECASE):
+                break
+        else:
+            return False, "Question must be a yes/no statement (e.g. 'Do you...?', 'Is it...?')."
+    if len(text.strip()) < 5:
+        return False, "Question is too short."
+    return True, ""
+
+async def is_duplicate_question(session, group_id, text):
+    """Check if question already exists in group (case-insensitive, not deleted)."""
+    q = await session.execute(
+        select(Question).where(
+            and_(Question.group_id == group_id, Question.is_deleted == 0, Question.text.ilike(text.strip()))
+        )
+    )
+    return q.scalar() is not None
+
+async def get_group_members(session, group_id):
+    """Return all user_ids in group."""
+    members = await session.execute(select(GroupMember).where(GroupMember.group_id == group_id))
+    return [m.user_id for m in members.scalars().all()]
+
+@dp.message()
+async def log_and_handle(message: types.Message, state: FSMContext):
+    if message.text:
+        logging.info(f"[USER_MESSAGE] user_id={message.from_user.id}, text={message.text}")
+    # Проксируем в handle_new_question, если это не команда и не FSM
+    if not message.text.startswith("/") and not await state.get_state():
+        await handle_new_question(message, state)
+
+async def clear_mygroups_messages(message, state):
+    data = await state.get_data()
+    ids = data.get("my_groups_msg_ids", [])
+    for mid in ids:
+        try:
+            await message.bot.delete_message(message.chat.id, mid)
+        except Exception:
+            pass
+    await state.update_data(my_groups_msg_ids=[])
+
+@dp.message()
+async def handle_new_question(message: types.Message, state: FSMContext):
+    """Handle new question/statement from user (not a command or FSM step)."""
+    # Очищаем меню /mygroups, если оно есть
+    await clear_mygroups_messages(message, state)
+    if message.text.startswith("/"):
+        return  # Ignore commands
+    user_id = message.from_user.id
+    try:
+        async with AsyncSessionLocal() as session:
+            user = await session.execute(select(User).where(User.telegram_user_id == user_id))
+            user = user.scalar()
+            if not user or not user.current_group_id:
+                await message.answer("You must join a group first.")
+                return
+            group_id = user.current_group_id
+            checking_msg = await message.answer("Checking your question...")
+            ok, reason = await moderate_question(message.text)
+            if not ok:
+                await checking_msg.edit_text(f"❌ {reason}")
+                await asyncio.sleep(2)
+                await checking_msg.delete()
+                # Удаляем исходное сообщение пользователя, если не прошёл модерацию
+                try:
+                    await message.delete()
+                except Exception as e:
+                    logging.warning(f"[handle_new_question] Failed to delete user message after moderation fail: {e}")
+                return
+            if await is_duplicate_question(session, group_id, message.text):
+                await checking_msg.edit_text("❌ This question already exists in this group.")
+                await asyncio.sleep(2)
+                await checking_msg.delete()
+                return
+            q = Question(group_id=group_id, author_id=user.id, text=message.text.strip())
+            session.add(q)
+            member = await session.execute(select(GroupMember).where(GroupMember.user_id == user.id, GroupMember.group_id == group_id))
+            member = member.scalar()
+            if member:
+                member.balance += 5
+            await session.commit()
+            await session.refresh(q)
+            group_obj = await session.execute(select(Group).where(Group.id == group_id))
+            group_obj = group_obj.scalar()
+            creator_user_id = group_obj.creator_user_id if group_obj else None
+            member_ids = await get_group_members(session, group_id)
+            for uid in member_ids:
+                is_author = (uid == user.id)
+                u = await session.execute(select(User).where(User.id == uid))
+                u = u.scalar()
+                is_creator = (u.id == creator_user_id)
+                answer_buttons = [types.InlineKeyboardButton(text=emoji, callback_data=f"answer_{q.id}_{val}") for val, emoji in ANSWER_VALUES]
+                keyboard = [answer_buttons]
+                if is_author or is_creator:
+                    keyboard.append([types.InlineKeyboardButton(text="Delete", callback_data=f"delete_question_{q.id}")])
+                kb = types.InlineKeyboardMarkup(inline_keyboard=keyboard)
+                try:
+                    sent = await bot.send_message(u.telegram_user_id, message.text.strip(), reply_markup=kb)
+                except Exception as e:
+                    logging.error(f"[handle_new_question] Failed to send question to user_id={u.telegram_user_id}: {e}")
+            await checking_msg.delete()
+            # Удаляем исходное сообщение пользователя (если не команда)
+            try:
+                await message.delete()
+            except Exception as e:
+                logging.warning(f"[handle_new_question] Failed to delete user message: {e}")
+    except Exception as e:
+        logging.exception(f"[handle_new_question] Unexpected error: {e}")
+        try:
+            await message.answer(f"❌ Internal error: {e}")
+        except Exception:
+            pass
+
+async def get_next_unanswered_question(session, group_id, user_id):
+    """Return the next unanswered question for user in group (skip считается ответом)."""
+    q = await session.execute(
+        select(Question).where(
+            and_(Question.group_id == group_id, Question.is_deleted == 0)
+        ).order_by(Question.created_at)
+    )
+    questions = q.scalars().all()
+    for question in questions:
+        ans = await session.execute(select(Answer).where(and_(Answer.question_id == question.id, Answer.user_id == user_id)))
+        ans = ans.scalar()
+        if not ans or ans.value is None:
+            return question
+    return None
+
+@router.callback_query(F.data.startswith("answer_"))
+async def cb_answer_question(callback: types.CallbackQuery, state: FSMContext):
+    parts = callback.data.split("_")
+    qid = int(parts[1])
+    try:
+        value = int(parts[2])
+    except Exception:
+        logging.error(f"[cb_answer_question] Invalid answer value (not int): {parts[2]}")
+        await callback.answer("Internal error: invalid answer value.", show_alert=True)
+        return
+    user_id = callback.from_user.id
+    logging.info(f"[cb_answer_question] user_id={user_id}, qid={qid}, value={value}")
+    allowed_values = set(ANSWER_VALUE_TO_EMOJI.keys())
+    if value not in allowed_values:
+        logging.error(f"[cb_answer_question] Invalid answer value: {value}")
+        await callback.answer("Internal error: invalid answer value.", show_alert=True)
+        return
+    async with AsyncSessionLocal() as session:
+        user = await session.execute(select(User).where(User.telegram_user_id == user_id))
+        user = user.scalar()
+        question = await session.execute(select(Question).where(Question.id == qid, Question.is_deleted == 0))
+        question = question.scalar()
+        if not question:
+            await callback.answer("Question was deleted.", show_alert=True)
+            await callback.message.delete()
+            return
+        group_obj = await session.execute(select(Group).where(Group.id == question.group_id))
+        group_obj = group_obj.scalar()
+        creator_user_id = group_obj.creator_user_id if group_obj else None
+        logging.info(f"[cb_answer_question] creator_user_id={creator_user_id}")
+        ans = await session.execute(select(Answer).where(and_(Answer.question_id == qid, Answer.user_id == user.id)))
+        ans = ans.scalar()
+        if ans and ans.value == value:
+            await show_question_with_all_buttons(callback, question, user, creator_user_id)
+            await callback.answer("You can change your answer.")
+            return
+        if not ans:
+            ans = Answer(question_id=qid, user_id=user.id)
+            session.add(ans)
+            member = await session.execute(select(GroupMember).where(GroupMember.user_id == user.id, GroupMember.group_id == question.group_id))
+            member = member.scalar()
+            if member:
+                member.balance += 1
+        ans.value = value
+        ans.is_skipped = int(value == 0)
+        await session.commit()
+        await show_question_with_selected_button(callback, question, user, value, creator_user_id)
+        await callback.answer("Answer saved.")
+        next_q = await get_next_unanswered_question(session, question.group_id, user.id)
+        if next_q:
+            await send_question_to_user(bot, user, next_q, creator_user_id)
+
+async def show_question_with_selected_button(callback, question, user, value, creator_user_id=None):
+    logging.info(f"[show_question_with_selected_button] user_id={user.id}, question_id={question.id}, value={value}, creator_user_id={creator_user_id}")
+    if creator_user_id is None:
+        async with AsyncSessionLocal() as session:
+            group_obj = await session.execute(select(Group).where(Group.id == question.group_id))
+            group_obj = group_obj.scalar()
+            creator_user_id = group_obj.creator_user_id if group_obj else None
+    is_author = (user.id == question.author_id)
+    is_creator = (user.id == creator_user_id)
+    if value not in ANSWER_VALUE_TO_EMOJI:
+        logging.error(f"[show_question_with_selected_button] Unknown value: {value}")
+        await callback.answer("Internal error: unknown answer value.", show_alert=True)
+        return
+    # Одна строка: [ответ, Delete] если доступно, иначе только ответ
+    row = [types.InlineKeyboardButton(text=ANSWER_VALUE_TO_EMOJI[value], callback_data=f"answer_{question.id}_{value}")]
+    if is_author or is_creator:
+        row.append(types.InlineKeyboardButton(text="Delete", callback_data=f"delete_question_{question.id}"))
+    kb = types.InlineKeyboardMarkup(inline_keyboard=[row])
+    try:
+        await callback.message.edit_reply_markup(reply_markup=kb)
+    except Exception as e:
+        logging.error(f"[show_question_with_selected_button] Failed to edit reply markup: {e}")
+        pass
+
+async def show_question_with_all_buttons(callback, question, user, creator_user_id=None):
+    if creator_user_id is None:
+        async with AsyncSessionLocal() as session:
+            group_obj = await session.execute(select(Group).where(Group.id == question.group_id))
+            group_obj = group_obj.scalar()
+            creator_user_id = group_obj.creator_user_id if group_obj else None
+    is_author = (user.id == question.author_id)
+    is_creator = (user.id == creator_user_id)
+    answer_buttons = [types.InlineKeyboardButton(text=ANSWER_VALUE_TO_EMOJI[val], callback_data=f"answer_{question.id}_{val}") for val, emoji in ANSWER_VALUES]
+    keyboard = [answer_buttons]
+    if is_author or is_creator:
+        keyboard.append([types.InlineKeyboardButton(text="Delete", callback_data=f"delete_question_{question.id}")])
+    kb = types.InlineKeyboardMarkup(inline_keyboard=keyboard)
+    try:
+        await callback.message.edit_reply_markup(reply_markup=kb)
+    except Exception:
+        pass
+
+async def send_question_to_user(bot, user, question, creator_user_id=None, group_id=None, all_groups_count=None, group_name=None):
+    # Получаем creator_user_id, group_id, group_name, all_groups_count если не переданы
+    if creator_user_id is None or group_id is None or group_name is None or all_groups_count is None:
+        async with AsyncSessionLocal() as session:
+            group_obj = await session.execute(select(Group).where(Group.id == question.group_id))
+            group_obj = group_obj.scalar()
+            creator_user_id = group_obj.creator_user_id if group_obj else None
+            group_id = group_obj.id if group_obj else None
+            group_name = group_obj.name if group_obj else None
+            memberships = await session.execute(select(GroupMember).where(GroupMember.user_id == user.id))
+            memberships = memberships.scalars().all()
+            all_groups_count = len(memberships)
+    is_author = (user.id == question.author_id)
+    is_creator = (user.id == creator_user_id)
+    if all_groups_count > 1:
+        text = f"<b>{group_name}</b>: {question.text}"
+    else:
+        text = question.text
+    # Все кнопки в одну строку
+    answer_buttons = [types.InlineKeyboardButton(text=ANSWER_VALUE_TO_EMOJI[val], callback_data=f"answer_{question.id}_{val}") for val, emoji in ANSWER_VALUES]
+    keyboard = [answer_buttons]
+    if is_author or is_creator:
+        keyboard.append([types.InlineKeyboardButton(text="Delete", callback_data=f"delete_question_{question.id}")])
+    kb = types.InlineKeyboardMarkup(inline_keyboard=keyboard)
+    await bot.send_message(user.telegram_user_id, text, reply_markup=kb, parse_mode="HTML")
+
+@router.callback_query(F.data.startswith("delete_question_"))
+async def cb_delete_question(callback: types.CallbackQuery, state: FSMContext):
+    qid = int(callback.data.split("_")[-1])
+    user_id = callback.from_user.id
+    logging.info(f"[cb_delete_question] user_id={user_id}, qid={qid}")
+    async with AsyncSessionLocal() as session:
+        question = await session.execute(select(Question).where(Question.id == qid, Question.is_deleted == 0))
+        question = question.scalar()
+        if not question:
+            await callback.answer("Question already deleted.", show_alert=True)
+            await callback.message.delete()
+            return
+        author = await session.execute(select(User).where(User.id == question.author_id))
+        author = author.scalar()
+        group_obj = await session.execute(select(Group).where(Group.id == question.group_id))
+        group_obj = group_obj.scalar()
+        creator = await session.execute(select(User).where(User.id == group_obj.creator_user_id)) if group_obj else None
+        creator = creator.scalar() if creator else None
+        allowed_telegram_ids = set()
+        if author:
+            allowed_telegram_ids.add(author.telegram_user_id)
+        if creator:
+            allowed_telegram_ids.add(creator.telegram_user_id)
+        logging.info(f"[cb_delete_question] allowed_telegram_ids={allowed_telegram_ids}")
+        if user_id not in allowed_telegram_ids:
+            await callback.answer("Only the author or group creator can delete this question.", show_alert=True)
+            return
+        question.is_deleted = 1
+        await session.execute(Answer.__table__.delete().where(Answer.question_id == qid))
+        await session.commit()
+        try:
+            await callback.message.delete()
+        except Exception as e:
+            logging.error(f"[cb_delete_question] Failed to delete message: {e}")
+        await callback.answer("Question deleted.")
+
+# --- Load answered questions logic ---
+ANSWERED_PAGE_SIZE = 10
+
+@dp.callback_query(F.data == "load_answered_questions")
+async def cb_load_answered_questions(callback: types.CallbackQuery, state: FSMContext):
+    user_id = callback.from_user.id
+    async with AsyncSessionLocal() as session:
+        user = await session.execute(select(User).where(User.telegram_user_id == user_id))
+        user = user.scalar()
+        group_id = user.current_group_id
+        # Получаем group_name и all_groups_count заранее
+        group_obj = await session.execute(select(Group).where(Group.id == group_id))
+        group_obj = group_obj.scalar()
+        group_name = group_obj.name if group_obj else None
+        memberships = await session.execute(select(GroupMember).where(GroupMember.user_id == user.id))
+        memberships = memberships.scalars().all()
+        all_groups_count = len(memberships)
+        # Получаем первые N отвеченных вопросов
+        answers = await session.execute(
+            select(Answer).where(
+                Answer.user_id == user.id,
+                Answer.value.isnot(None),
+                Answer.question_id.in_(select(Question.id).where(Question.group_id == group_id, Question.is_deleted == 0))
+            ).order_by(Answer.created_at).limit(ANSWERED_PAGE_SIZE)
+        )
+        answers = answers.scalars().all()
+        if not answers:
+            await callback.answer("No answered questions yet.", show_alert=True)
+            return
+        for ans in answers:
+            question = await session.execute(select(Question).where(Question.id == ans.question_id))
+            question = question.scalar()
+            await send_answered_question_to_user(callback.bot, user, question, ans.value, group_name=group_name, all_groups_count=all_groups_count)
+        # Проверяем, есть ли ещё
+        total_count = await session.execute(
+            select(Answer).where(
+                Answer.user_id == user.id,
+                Answer.value.isnot(None),
+                Answer.question_id.in_(select(Question.id).where(Question.group_id == group_id, Question.is_deleted == 0))
+            )
+        )
+        total_count = len(total_count.scalars().all())
+        if total_count > ANSWERED_PAGE_SIZE:
+            kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="Load more", callback_data="load_answered_questions_more_1")]])
+            await callback.message.answer("More answered questions available:", reply_markup=kb)
+    await callback.answer()
+
+@dp.callback_query(F.data.startswith("load_answered_questions_more_"))
+async def cb_load_answered_questions_more(callback: types.CallbackQuery, state: FSMContext):
+    user_id = callback.from_user.id
+    page = int(callback.data.split("_")[-1])
+    offset = (page + 1) * ANSWERED_PAGE_SIZE
+    async with AsyncSessionLocal() as session:
+        user = await session.execute(select(User).where(User.telegram_user_id == user_id))
+        user = user.scalar()
+        group_id = user.current_group_id
+        group_obj = await session.execute(select(Group).where(Group.id == group_id))
+        group_obj = group_obj.scalar()
+        group_name = group_obj.name if group_obj else None
+        memberships = await session.execute(select(GroupMember).where(GroupMember.user_id == user.id))
+        memberships = memberships.scalars().all()
+        all_groups_count = len(memberships)
+        answers = await session.execute(
+            select(Answer).where(
+                Answer.user_id == user.id,
+                Answer.value.isnot(None),
+                Answer.question_id.in_(select(Question.id).where(Question.group_id == group_id, Question.is_deleted == 0))
+            ).order_by(Answer.created_at).offset(offset).limit(ANSWERED_PAGE_SIZE)
+        )
+        answers = answers.scalars().all()
+        if not answers:
+            await callback.answer("No more answered questions.", show_alert=True)
+            return
+        for ans in answers:
+            question = await session.execute(select(Question).where(Question.id == ans.question_id))
+            question = question.scalar()
+            await send_answered_question_to_user(callback.bot, user, question, ans.value, group_name=group_name, all_groups_count=all_groups_count)
+        # Проверяем, есть ли ещё
+        total_count = await session.execute(
+            select(Answer).where(
+                Answer.user_id == user.id,
+                Answer.value.isnot(None),
+                Answer.question_id.in_(select(Question.id).where(Question.group_id == group_id, Question.is_deleted == 0))
+            )
+        )
+        total_count = len(total_count.scalars().all())
+        if total_count > offset + ANSWERED_PAGE_SIZE:
+            kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="Load more", callback_data=f"load_answered_questions_more_{page+1}")]])
+            await callback.message.answer("More answered questions available:", reply_markup=kb)
+    await callback.answer()
+
+async def send_answered_question_to_user(bot, user, question, value, group_name=None, all_groups_count=None):
+    # Получаем group_name и all_groups_count если не переданы
+    if group_name is None or all_groups_count is None:
+        async with AsyncSessionLocal() as session:
+            group_obj = await session.execute(select(Group).where(Group.id == question.group_id))
+            group_obj = group_obj.scalar()
+            group_name = group_obj.name if group_obj else None
+            memberships = await session.execute(select(GroupMember).where(GroupMember.user_id == user.id))
+            memberships = memberships.scalars().all()
+            all_groups_count = len(memberships)
+    is_author = (user.id == question.author_id)
+    async with AsyncSessionLocal() as session:
+        group_obj = await session.execute(select(Group).where(Group.id == question.group_id))
+        group_obj = group_obj.scalar()
+        creator_user_id = group_obj.creator_user_id if group_obj else None
+    is_creator = (user.id == creator_user_id)
+    if all_groups_count > 1:
+        text = f"<b>{group_name}</b>: {question.text}"
+    else:
+        text = question.text
+    # Все кнопки в одну строку
+    row = [types.InlineKeyboardButton(text=ANSWER_VALUE_TO_EMOJI[value], callback_data=f"answer_{question.id}_{value}")]
+    if is_author or is_creator:
+        row.append(types.InlineKeyboardButton(text="Delete", callback_data=f"delete_question_{question.id}"))
+    kb = types.InlineKeyboardMarkup(inline_keyboard=[row])
+    await bot.send_message(user.telegram_user_id, text, reply_markup=kb, parse_mode="HTML")
 
 dp.include_router(router)
 

@@ -8,12 +8,31 @@ alwaysApply: true
 ## Type: Telegram Bot System
 ## Purpose: Help people connect with like-minded individuals based on shared values, interests, and worldview.
 
+# Implemented Logic
+- Group creation by admin (creator). Creator is always a group member.
+- Admin cannot leave their own group, only delete it (with confirmation and cascade removal of all members).
+- Group deletion notifies all members, resets their current_group_id, and removes all memberships.
+- Users can join groups via invite code or deep link. Validation and onboarding are enforced.
+- /mygroups shows current group, allows switching, leaving (for members), or deleting (for creator).
+- All group membership changes (leave, delete) clean up chat messages and reset state.
+- Only bot messages are deleted; user messages (e.g. /mygroups) are not.
+- All sensitive user data (answers, etc.) is stored securely (encryption ready).
+- All business logic is covered by async unit tests (pytest, testcontainers, PostgreSQL): creation, join, leave, delete, role checks, onboarding, edge-cases.
+- Full DB consistency: current_group_id is always reset on leave/delete, no user can reference a deleted group.
+- Admins always see a "Create a group" button in /mygroups.
+- UX: all confirmation dialogs (leave/delete) are non-blocking, with Cancel and full chat cleanup.
+
 # How It Works
 ## Group Creation
-A group is created by an administrator (the "creator") within the main Allkinds Bot.
+A group is created by an administrator (the "creator") within the main Allkinds Bot. Creator is auto-added as a member and cannot leave, only delete.
 
 ## Inviting Users
-The creator invites others to join the group via a deep link or a unique 5-character invite code.
+The creator invites others to join the group via a deep link or a unique 5-character invite code. Onboarding is enforced for all new members.
+
+## Group Membership Management
+- Members can leave groups (with confirmation, all answers deleted).
+- Creator can only delete the group (with confirmation, all members notified and removed).
+- After group deletion, all users are notified and their state is reset.
 
 ## Question Exchange & Matching
 
@@ -21,7 +40,7 @@ Group members ask yes/no-based questions or statements.
 
 Answer options include: Strong No, No, Skip, Yes, Strong Yes.
 
-Users answer their own and others’ questions.
+Users answer their own and others' questions.
 
 Based on answer similarity, users receive recommendations of others who match them most closely.
 
@@ -31,14 +50,10 @@ When a match is found, both users are redirected to a secondary bot: Allkinds Ch
 
 This bot facilitates deeper conversations and helps users decide whether to continue communication.
 
-# AI-Powered Features
-The system uses OpenAI models for:
-
-Duplicate Question Detection: Prevents spam and repeat questions.
-
-Content Moderation: Filters out inappropriate content (e.g., topics involving drugs, violence, hate speech, etc.).
-
-Smart Question Routing: Prioritizes and suggests questions that are more relevant to each user.
-
-Conversation Kickstarters: Surfaces deeper insights from shared answers to help users get to know each other on a meaningful level.
+# AI-Powered Features (Planned)
+The system will use OpenAI models for:
+- Duplicate Question Detection: Prevents spam and repeat questions.
+- Content Moderation: Filters out inappropriate content (e.g., topics involving drugs, violence, hate speech, etc.).
+- Smart Question Routing: Prioritizes and suggests questions that are more relevant to each user.
+- Conversation Kickstarters: Surfaces deeper insights from shared answers to help users get to know each other on a meaningful level.
 

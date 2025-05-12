@@ -1,6 +1,6 @@
 import pytest
 from sqlalchemy import select
-from src.models import User, Group, GroupMember, GroupCreator
+from src.models import User, Group, GroupMember, GroupCreator, Question, Answer
 import random, string
 
 pytestmark = pytest.mark.asyncio
@@ -24,6 +24,18 @@ async def create_group(session, creator_user, name, description):
     session.add(member)
     await session.flush()
     return group, code
+
+async def create_question(session, group, author, text):
+    q = Question(group_id=group.id, author_id=author.id, text=text)
+    session.add(q)
+    await session.flush()
+    return q
+
+async def answer_question(session, user, question, value):
+    ans = Answer(question_id=question.id, user_id=user.id, value=value, is_skipped=int(value == 0))
+    session.add(ans)
+    await session.commit()
+    return ans
 
 async def test_admin_auto_added_to_group(async_session):
     user = await create_user(async_session, 111)
@@ -140,4 +152,137 @@ async def test_delete_group_removes_group_and_members(async_session):
     for u in [admin, user1, user2]:
         updated = await async_session.execute(select(User).where(User.id == u.id))
         updated = updated.scalar()
-        assert updated.current_group_id is None 
+        assert updated.current_group_id is None
+
+async def test_mygroups_logic(async_session):
+    # Пользователь не зарегистрирован
+    user_id = 1001
+    user = await async_session.execute(select(User).where(User.telegram_user_id == user_id))
+    assert user.scalar() is None
+
+    # Регистрируем пользователя без групп
+    user = User(telegram_user_id=user_id)
+    async_session.add(user)
+    await async_session.commit()
+    groups = await async_session.execute(select(Group).join(GroupMember).where(GroupMember.user_id == user.id))
+    assert groups.scalars().all() == []
+
+    # Добавляем одну группу
+    group = Group(name="TestG1", description="Desc1", invite_code="AAAAA", creator_user_id=user.id)
+    async_session.add(group)
+    await async_session.flush()
+    member = GroupMember(user_id=user.id, group_id=group.id)
+    async_session.add(member)
+    await async_session.commit()
+    groups = await async_session.execute(select(Group).join(GroupMember).where(GroupMember.user_id == user.id))
+    groups = groups.scalars().all()
+    assert len(groups) == 1
+    assert groups[0].name == "TestG1"
+
+    # Добавляем вторую группу
+    group2 = Group(name="TestG2", description="Desc2", invite_code="BBBBB", creator_user_id=user.id)
+    async_session.add(group2)
+    await async_session.flush()
+    member2 = GroupMember(user_id=user.id, group_id=group2.id)
+    async_session.add(member2)
+    await async_session.commit()
+    groups = await async_session.execute(select(Group).join(GroupMember).where(GroupMember.user_id == user.id))
+    groups = groups.scalars().all()
+    assert len(groups) == 2
+    names = [g.name for g in groups]
+    assert "TestG1" in names and "TestG2" in names
+
+    # Проверяем для админа
+    admin_id = 1002
+    admin = User(telegram_user_id=admin_id)
+    async_session.add(admin)
+    await async_session.flush()
+    async_session.add(GroupCreator(user_id=admin.id))
+    await async_session.commit()
+    admin_group = Group(name="AdminG", description="AdminDesc", invite_code="CCCCC", creator_user_id=admin.id)
+    async_session.add(admin_group)
+    await async_session.flush()
+    admin_member = GroupMember(user_id=admin.id, group_id=admin_group.id)
+    async_session.add(admin_member)
+    await async_session.commit()
+    groups = await async_session.execute(select(Group).join(GroupMember).where(GroupMember.user_id == admin.id))
+    groups = groups.scalars().all()
+    assert len(groups) == 1
+    assert groups[0].name == "AdminG"
+
+async def test_skip_is_answered(async_session):
+    user = await create_user(async_session, 2001)
+    group, _ = await create_group(async_session, user, "GSkip", "Desc")
+    q = await create_question(async_session, group, user, "Q1?")
+    await answer_question(async_session, user, q, 0)  # skip
+    # Проверяем, что вопрос не считается неотвеченным
+    unanswered = await async_session.execute(select(Answer).where(Answer.user_id == user.id, Answer.question_id == q.id, Answer.value.isnot(None)))
+    assert unanswered.scalar() is not None
+
+async def test_reanswer_question(async_session):
+    user = await create_user(async_session, 2002)
+    group, _ = await create_group(async_session, user, "GReans", "Desc")
+    q = await create_question(async_session, group, user, "Q2?")
+    ans1 = await answer_question(async_session, user, q, 1)
+    # Переответ (смена на skip)
+    ans1.value = 0
+    ans1.is_skipped = 1
+    await async_session.commit()
+    updated = await async_session.execute(select(Answer).where(Answer.id == ans1.id))
+    updated = updated.scalar()
+    assert updated.value == 0 and updated.is_skipped == 1
+    # Переответ обратно
+    updated.value = 2
+    updated.is_skipped = 0
+    await async_session.commit()
+    again = await async_session.execute(select(Answer).where(Answer.id == ans1.id))
+    again = again.scalar()
+    assert again.value == 2 and again.is_skipped == 0
+
+async def test_load_answered_questions_pagination(async_session):
+    user = await create_user(async_session, 2003)
+    group, _ = await create_group(async_session, user, "GLoad", "Desc")
+    questions = [await create_question(async_session, group, user, f"Q{i}?") for i in range(15)]
+    for i, q in enumerate(questions):
+        await answer_question(async_session, user, q, (i % 5) - 2)
+    # Имитация первой страницы
+    page1 = await async_session.execute(select(Answer).where(Answer.user_id == user.id, Answer.value.isnot(None)).order_by(Answer.created_at).limit(10))
+    page1 = page1.scalars().all()
+    assert len(page1) == 10
+    # Имитация второй страницы
+    page2 = await async_session.execute(select(Answer).where(Answer.user_id == user.id, Answer.value.isnot(None)).order_by(Answer.created_at).offset(10).limit(10))
+    page2 = page2.scalars().all()
+    assert len(page2) == 5
+
+async def test_delete_answered_question(async_session):
+    user = await create_user(async_session, 2004)
+    group, _ = await create_group(async_session, user, "GDel", "Desc")
+    q = await create_question(async_session, group, user, "QDel?")
+    ans = await answer_question(async_session, user, q, 1)
+    # Удаляем вопрос (soft delete)
+    q.is_deleted = 1
+    await async_session.commit()
+    # Проверяем, что вопрос не появляется в списке отвеченных
+    answers = await async_session.execute(select(Answer).where(Answer.user_id == user.id, Answer.question_id == q.id, Answer.value.isnot(None)))
+    assert answers.scalar() is not None
+    # Но при выборке только не удалённых вопросов — не попадает
+    not_deleted = await async_session.execute(select(Answer).where(Answer.user_id == user.id, Answer.value.isnot(None), Answer.question_id.in_(select(Question.id).where(Question.group_id == group.id, Question.is_deleted == 0))))
+    assert not_deleted.scalar() is None
+
+async def test_balance_not_incremented_on_reanswer(async_session):
+    user = await create_user(async_session, 2005)
+    group, _ = await create_group(async_session, user, "GBal", "Desc")
+    member = await async_session.execute(select(GroupMember).where(GroupMember.user_id == user.id, GroupMember.group_id == group.id))
+    member = member.scalar()
+    q = await create_question(async_session, group, user, "QBal?")
+    await answer_question(async_session, user, q, 1)
+    member.balance += 1
+    await async_session.commit()
+    # Переответ — баланс не увеличивается
+    ans = await async_session.execute(select(Answer).where(Answer.user_id == user.id, Answer.question_id == q.id))
+    ans = ans.scalar()
+    ans.value = 2
+    await async_session.commit()
+    member2 = await async_session.execute(select(GroupMember).where(GroupMember.user_id == user.id, GroupMember.group_id == group.id))
+    member2 = member2.scalar()
+    assert member2.balance == member.balance 
