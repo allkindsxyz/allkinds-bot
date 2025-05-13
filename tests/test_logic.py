@@ -2,6 +2,7 @@ import pytest
 from sqlalchemy import select
 from src.models import User, Group, GroupMember, GroupCreator, Question, Answer
 import random, string
+import types as pytypes
 
 pytestmark = pytest.mark.asyncio
 
@@ -285,4 +286,183 @@ async def test_balance_not_incremented_on_reanswer(async_session):
     await async_session.commit()
     member2 = await async_session.execute(select(GroupMember).where(GroupMember.user_id == user.id, GroupMember.group_id == group.id))
     member2 = member2.scalar()
-    assert member2.balance == member.balance 
+    assert member2.balance == member.balance
+
+async def test_questions_isolation_between_groups(async_session):
+    """Вопросы одной группы не видны в другой (строгая изоляция по group_id)."""
+    user = await create_user(async_session, 3001)
+    async_session.add(GroupCreator(user_id=user.id))
+    await async_session.commit()
+    group1, _ = await create_group(async_session, user, "G1", "Desc1")
+    group2, _ = await create_group(async_session, user, "G2", "Desc2")
+    q1 = await create_question(async_session, group1, user, "Q1?")
+    q2 = await create_question(async_session, group2, user, "Q2?")
+    # Вопросы группы 1
+    qs1 = await async_session.execute(select(Question).where(Question.group_id == group1.id))
+    qs1 = qs1.scalars().all()
+    assert all(q.group_id == group1.id for q in qs1)
+    # Вопросы группы 2
+    qs2 = await async_session.execute(select(Question).where(Question.group_id == group2.id))
+    qs2 = qs2.scalars().all()
+    assert all(q.group_id == group2.id for q in qs2)
+    # Вопросы не пересекаются
+    ids1 = {q.id for q in qs1}
+    ids2 = {q.id for q in qs2}
+    assert ids1.isdisjoint(ids2)
+
+async def test_cleanup_on_group_delete_and_leave(async_session):
+    """Проверка, что после удаления/выхода из группы все связанные данные корректно очищаются (edge-cases)."""
+    admin = await create_user(async_session, 3002)
+    async_session.add(GroupCreator(user_id=admin.id))
+    await async_session.commit()
+    group, _ = await create_group(async_session, admin, "GDel", "Desc")
+    user = await create_user(async_session, 3003)
+    async_session.add(GroupMember(user_id=user.id, group_id=group.id))
+    user.current_group_id = group.id
+    await async_session.commit()
+    # Вопросы и ответы
+    q = await create_question(async_session, group, admin, "QDel?")
+    ans = await answer_question(async_session, user, q, 1)
+    # Удаление группы
+    # Сброс current_group_id у всех пользователей, у кого он указывает на эту группу
+    await async_session.execute(
+        User.__table__.update().where(User.current_group_id == group.id).values(current_group_id=None)
+    )
+    await async_session.execute(GroupMember.__table__.delete().where(GroupMember.group_id == group.id))
+    await async_session.execute(Question.__table__.delete().where(Question.group_id == group.id))
+    await async_session.execute(Answer.__table__.delete().where(Answer.question_id == q.id))
+    await async_session.execute(Group.__table__.delete().where(Group.id == group.id))
+    await async_session.commit()
+    # Проверки
+    g = await async_session.execute(select(Group).where(Group.id == group.id))
+    assert g.scalar() is None
+    m = await async_session.execute(select(GroupMember).where(GroupMember.group_id == group.id))
+    assert m.scalars().all() == []
+    q_check = await async_session.execute(select(Question).where(Question.group_id == group.id))
+    assert q_check.scalars().all() == []
+    a_check = await async_session.execute(select(Answer).where(Answer.question_id == q.id))
+    assert a_check.scalars().all() == []
+    # current_group_id сброшен
+    await async_session.refresh(user)
+    assert user.current_group_id is None
+
+async def test_switch_group_logic(async_session):
+    """Проверка, что смена группы (switch group) происходит корректно."""
+    user = await create_user(async_session, 3004)
+    async_session.add(GroupCreator(user_id=user.id))
+    await async_session.commit()
+    group1, _ = await create_group(async_session, user, "GS1", "Desc1")
+    group2, _ = await create_group(async_session, user, "GS2", "Desc2")
+    # По умолчанию current_group_id = None
+    assert user.current_group_id is None
+    # Смена на первую группу
+    user.current_group_id = group1.id
+    await async_session.commit()
+    updated = await async_session.execute(select(User).where(User.id == user.id))
+    updated = updated.scalar()
+    assert updated.current_group_id == group1.id
+    # Смена на вторую группу
+    updated.current_group_id = group2.id
+    await async_session.commit()
+    again = await async_session.execute(select(User).where(User.id == user.id))
+    again = again.scalar()
+    assert again.current_group_id == group2.id
+    # Вопросы и ответы только для выбранной группы
+    q1 = await create_question(async_session, group1, user, "QSG1?")
+    q2 = await create_question(async_session, group2, user, "QSG2?")
+    await answer_question(async_session, user, q2, 2)
+    # Проверяем, что вопросы фильтруются по current_group_id
+    questions = await async_session.execute(select(Question).where(Question.group_id == again.current_group_id))
+    questions = questions.scalars().all()
+    assert all(q.group_id == group2.id for q in questions)
+    # Ответы только по выбранной группе
+    answers = await async_session.execute(select(Answer).where(Answer.user_id == user.id))
+    answers = answers.scalars().all()
+    assert all(a.question_id == q2.id for a in answers)
+
+@pytest.mark.asyncio
+async def test_instructions_command(monkeypatch):
+    """Проверяет, что инструкция отображается, удаляется и не дублируется."""
+    from src import bot as bot_module
+    state_data = {}
+    class DummyState:
+        async def get_data(self):
+            return state_data.copy()
+        async def update_data(self, **kwargs):
+            state_data.update(kwargs)
+    class DummyMessage:
+        def __init__(self):
+            self.chat = pytypes.SimpleNamespace(id=123)
+            self.bot = self
+            self.deleted = []
+            self.sent = []
+        async def answer(self, text, parse_mode=None):
+            self.sent.append(text)
+            # эмулируем message_id
+            return pytypes.SimpleNamespace(message_id=len(self.sent))
+        async def delete_message(self, chat_id, msg_id):
+            self.deleted.append(msg_id)
+    message = DummyMessage()
+    state = DummyState()
+    # Первый вызов — инструкция появляется
+    await bot_module.instructions(message, state)
+    assert len(message.sent) == 1
+    assert "How to use the bot" in message.sent[0]
+    assert state_data.get("instructions_msg_id") == 1
+    # Второй вызов — старая удаляется, новая появляется
+    await bot_module.instructions(message, state)
+    assert len(message.sent) == 2
+    assert message.deleted == [1]
+    assert state_data.get("instructions_msg_id") == 2
+    # Вызов mygroups — инструкция удаляется
+    await bot_module.hide_instructions_and_mygroups_by_message(message, state)
+    assert message.deleted == [1, 2]
+    assert state_data.get("instructions_msg_id") is None
+
+@pytest.mark.asyncio
+async def test_mygroups_command(monkeypatch):
+    """Проверяет, что /mygroups отображает сообщение, сохраняет и удаляет message_id."""
+    from src import bot as bot_module
+    state_data = {}
+    class DummyState:
+        async def get_data(self):
+            return state_data.copy()
+        async def update_data(self, **kwargs):
+            state_data.update(kwargs)
+    class DummyMessage:
+        def __init__(self):
+            self.chat = pytypes.SimpleNamespace(id=123)
+            self.bot = self
+            self.deleted = []
+            self.sent = []
+            self.from_user = pytypes.SimpleNamespace(id=111)
+        async def answer(self, text, **kwargs):
+            self.sent.append(text)
+            # эмулируем message_id
+            return pytypes.SimpleNamespace(message_id=len(self.sent))
+        async def delete_message(self, chat_id, msg_id):
+            self.deleted.append(msg_id)
+    # Мокаем show_user_groups чтобы оно отправляло сообщение и сохраняло message_id
+    async def fake_show_user_groups(message, user_id, state):
+        msg = await message.answer(f"Groups for {user_id}")
+        data = await state.get_data()
+        ids = data.get("my_groups_msg_ids", [])
+        ids.append(msg.message_id)
+        await state.update_data(my_groups_msg_ids=ids)
+    monkeypatch.setattr(bot_module, "show_user_groups", fake_show_user_groups)
+    message = DummyMessage()
+    state = DummyState()
+    # Первый вызов — сообщение появляется
+    await bot_module.my_groups(message, state)
+    assert len(message.sent) == 1
+    assert "Groups for 111" in message.sent[0]
+    assert state_data.get("my_groups_msg_ids") == [1]
+    # Второй вызов — старое удаляется, новое появляется
+    await bot_module.my_groups(message, state)
+    assert len(message.sent) == 2
+    assert message.deleted == [1]
+    assert state_data.get("my_groups_msg_ids") == [2]
+    # Вызов очистки — сообщение удаляется
+    await bot_module.hide_instructions_and_mygroups_by_message(message, state)
+    assert message.deleted == [1, 2]
+    assert state_data.get("my_groups_msg_ids") == [] 

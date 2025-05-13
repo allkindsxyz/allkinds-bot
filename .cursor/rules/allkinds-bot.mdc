@@ -17,10 +17,12 @@ alwaysApply: true
 - All group membership changes (leave, delete) clean up chat messages and reset state.
 - Only bot messages are deleted; user messages (e.g. /mygroups) are not.
 - All sensitive user data (answers, etc.) is stored securely (encryption ready).
-- All business logic is covered by async unit tests (pytest, testcontainers, PostgreSQL): creation, join, leave, delete, role checks, onboarding, edge-cases.
+- All business logic is covered by async unit tests (pytest, testcontainers, PostgreSQL): creation, join, leave, delete, role checks, onboarding, edge-cases, group/question isolation, group switching, data cleanup.
 - Full DB consistency: current_group_id is always reset on leave/delete, no user can reference a deleted group.
+- Strict group_id isolation: questions and answers are never visible across groups.
 - Admins always see a "Create a group" button in /mygroups.
 - UX: all confirmation dialogs (leave/delete) are non-blocking, with Cancel and full chat cleanup.
+- All datetime fields are timezone-aware (UTC, timezone=True).
 
 # How It Works
 ## Group Creation
@@ -33,22 +35,30 @@ The creator invites others to join the group via a deep link or a unique 5-chara
 - Members can leave groups (with confirmation, all answers deleted).
 - Creator can only delete the group (with confirmation, all members notified and removed).
 - After group deletion, all users are notified and their state is reset.
+- When a group is deleted or a user leaves, all related data (memberships, questions, answers, current_group_id) is fully cleaned up. No references to deleted groups remain.
+- Switching between groups updates current_group_id and all question/answer logic is strictly scoped to the selected group.
 
 ## Question Exchange & Matching
-
 Group members ask yes/no-based questions or statements.
-
 Answer options include: Strong No, No, Skip, Yes, Strong Yes.
-
 Users answer their own and others' questions.
-
 Based on answer similarity, users receive recommendations of others who match them most closely.
+All question/answer operations are strictly isolated by group_id.
 
 ## One-on-One Communication
-
 When a match is found, both users are redirected to a secondary bot: Allkinds Chat Bot.
-
 This bot facilitates deeper conversations and helps users decide whether to continue communication.
+
+# Technical Details & Testing
+- All datetime fields use timezone-aware UTC (datetime.now(UTC), timezone=True in models).
+- All business logic is covered by async unit tests (pytest, testcontainers, PostgreSQL):
+  - Group creation, join, leave, delete (with full data cleanup and notifications)
+  - Role checks, onboarding, edge-cases
+  - Strict group_id isolation: questions/answers never leak between groups
+  - Group switching: current_group_id updates, only relevant questions/answers shown
+  - Data cleanup: after group deletion/leave, all related data (memberships, questions, answers, current_group_id) is removed
+  - Pagination, re-answer, soft delete, balance logic
+- All tests pass. No critical warnings remain. Minor warnings (pytest-asyncio event_loop fixture) are non-blocking and can be eliminated by switching to standard event_loop_policy or mark.asyncio.
 
 # AI-Powered Features (Planned)
 The system will use OpenAI models for:

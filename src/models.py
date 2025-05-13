@@ -1,6 +1,6 @@
 from sqlalchemy import Column, Integer, BigInteger, String, Text, ForeignKey, Float, DateTime, UniqueConstraint
 from sqlalchemy.orm import declarative_base, relationship
-from datetime import datetime
+from datetime import datetime, UTC
 
 Base = declarative_base()
 
@@ -9,7 +9,7 @@ class User(Base):
     id = Column(Integer, primary_key=True)
     telegram_user_id = Column(BigInteger, unique=True, nullable=False)
     current_group_id = Column(Integer, ForeignKey('groups.id'), nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
     
     memberships = relationship('GroupMember', back_populates='user')
     created_groups = relationship('Group', back_populates='creator', foreign_keys='Group.creator_user_id')
@@ -22,7 +22,7 @@ class Group(Base):
     description = Column(Text, nullable=False)
     invite_code = Column(String(5), unique=True, nullable=False)
     creator_user_id = Column(Integer, ForeignKey('users.id'))
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
     
     creator = relationship('User', back_populates='created_groups', foreign_keys=[creator_user_id])
     members = relationship('GroupMember', back_populates='group')
@@ -38,7 +38,7 @@ class GroupMember(Base):
     geolocation_lon = Column(Float)
     city = Column(String(128), nullable=True)
     role = Column(String(32), default='member')
-    joined_at = Column(DateTime, default=datetime.utcnow)
+    joined_at = Column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
     balance = Column(Integer, default=0, nullable=False)
     
     group = relationship('Group', back_populates='members')
@@ -50,7 +50,7 @@ class GroupCreator(Base):
     __tablename__ = 'group_creators'
     id = Column(Integer, primary_key=True)
     user_id = Column(Integer, ForeignKey('users.id'), unique=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
 
 class Question(Base):
     __tablename__ = 'questions'
@@ -59,7 +59,7 @@ class Question(Base):
     author_id = Column(Integer, ForeignKey('users.id', ondelete='CASCADE'), nullable=False)
     text = Column(Text, nullable=False)
     embedding = Column(String, nullable=True)  # для future AI
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
     is_deleted = Column(Integer, default=0)  # soft delete
 
     group = relationship('Group')
@@ -73,7 +73,7 @@ class Answer(Base):
     user_id = Column(Integer, ForeignKey('users.id', ondelete='CASCADE'), nullable=False)
     value = Column(Integer, nullable=True)  # -2, -1, 0, 1, 2
     is_skipped = Column(Integer, default=0)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
 
     question = relationship('Question', back_populates='answers')
     user = relationship('User') 

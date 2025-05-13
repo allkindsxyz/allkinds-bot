@@ -157,6 +157,7 @@ async def on_startup(dispatcher):
     commands = [
         BotCommand(command="start", description="Start bot"),
         BotCommand(command="mygroups", description="Show your groups"),
+        BotCommand(command="instructions", description="How to use the bot"),
         # Можно добавить другие команды
     ]
     await bot.set_my_commands(commands)
@@ -208,13 +209,45 @@ async def show_user_groups(message, user_id, state):
         ids.append(sent.message_id)
         await state.update_data(my_groups_msg_ids=ids)
 
+async def hide_instructions_and_mygroups_by_message(message, state):
+    data = await state.get_data()
+    msg_id = data.get("instructions_msg_id")
+    if msg_id:
+        try:
+            await message.bot.delete_message(message.chat.id, msg_id)
+        except Exception:
+            pass
+    ids = data.get("my_groups_msg_ids", [])
+    for mid in ids:
+        try:
+            await message.bot.delete_message(message.chat.id, mid)
+        except Exception:
+            pass
+    await state.update_data(instructions_msg_id=None, my_groups_msg_ids=[])
+
+@dp.message(Command("instructions"))
+async def instructions(message: types.Message, state: FSMContext):
+    await hide_instructions_and_mygroups_by_message(message, state)
+    text = (
+        "<b>How to use the bot:</b>\n"
+        "1. Join a group and get +20💎\n"
+        "2. Answer others' questions and get +1💎 for each answer\n"
+        "3. Ask your own yes/no questions or statements — +5💎\n"
+        "4. Spend points to find your best match in the group —10💎\n"
+        "5. Go to Allkinds.Chat and see if you really vibe!"
+    )
+    msg = await message.answer(text, parse_mode="HTML")
+    await state.update_data(instructions_msg_id=msg.message_id)
+
 @dp.message(Command("mygroups"))
 async def my_groups(message: types.Message, state: FSMContext):
+    await hide_instructions_and_mygroups_by_message(message, state)
     user_id = message.from_user.id
     await show_user_groups(message, user_id, state)
 
 @dp.message(CommandStart())
 async def start(message: types.Message, state: FSMContext):
+    await hide_instructions_and_mygroups_by_message(message, state)
     user_id = message.from_user.id
     args = message.text.split()
     if len(args) == 2 and len(args[1]) == 5:
@@ -330,6 +363,7 @@ async def group_desc_step(message: types.Message, state: FSMContext):
 
 @dp.callback_query(F.data.startswith("switch_to_group_"))
 async def cb_switch_to_group(callback: types.CallbackQuery, state: FSMContext):
+    await hide_instructions_and_mygroups_by_message(callback.message, state)
     group_id = int(callback.data.split("_")[-1])
     user_id = callback.from_user.id
     async with AsyncSessionLocal() as session:
@@ -731,6 +765,7 @@ async def clear_mygroups_messages(message, state):
 
 @dp.message()
 async def handle_new_question(message: types.Message, state: FSMContext):
+    await hide_instructions_and_mygroups_by_message(message, state)
     """Handle new question/statement from user (not a command or FSM step)."""
     # Очищаем меню /mygroups, если оно есть
     await clear_mygroups_messages(message, state)
@@ -818,6 +853,7 @@ async def get_next_unanswered_question(session, group_id, user_id):
 
 @router.callback_query(F.data.startswith("answer_"))
 async def cb_answer_question(callback: types.CallbackQuery, state: FSMContext):
+    await hide_instructions_and_mygroups_by_message(callback.message, state)
     parts = callback.data.split("_")
     qid = int(parts[1])
     try:

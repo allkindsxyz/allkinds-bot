@@ -17,9 +17,10 @@ from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from sqlalchemy.orm import sessionmaker
 from src.models import Base
 
-@pytest.fixture(scope="session")
+@pytest_asyncio.fixture(scope="session")
 def event_loop():
-    loop = asyncio.get_event_loop()
+    """Создаёт новый event loop для сессии тестов (совместимо с pytest-asyncio >= 0.21)."""
+    loop = asyncio.new_event_loop()
     yield loop
     loop.close()
 
