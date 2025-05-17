@@ -77,4 +77,14 @@ class Answer(Base):
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
 
     question = relationship('Question', back_populates='answers')
-    user = relationship('User') 
+    user = relationship('User')
+
+class MatchStatus(Base):
+    __tablename__ = 'match_statuses'
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey('users.id', ondelete='CASCADE'), nullable=False)
+    group_id = Column(Integer, ForeignKey('groups.id', ondelete='CASCADE'), nullable=False)
+    match_user_id = Column(Integer, ForeignKey('users.id', ondelete='CASCADE'), nullable=False)
+    status = Column(String(16), nullable=False)  # 'hidden' | 'postponed'
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
+    __table_args__ = (UniqueConstraint('user_id', 'group_id', 'match_user_id', name='_match_uc'),) 

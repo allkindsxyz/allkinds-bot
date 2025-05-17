@@ -1,20 +1,22 @@
 import os
 import logging
 from src.db import AsyncSessionLocal
-from sqlalchemy import select
-from src.models import Group, GroupMember, User
+from sqlalchemy import select, and_, text
+from src.models import Group, GroupMember, User, Answer, Question
 # Хендлеры для управления группами
 # Импорты и вызовы сервисов будут добавлены после выноса бизнес-логики 
 
 from aiogram import types, F, Router
 from aiogram.fsm.context import FSMContext
 from src.loader import bot
-from src.keyboards.groups import get_admin_keyboard, get_user_keyboard, go_to_group_keyboard, get_group_main_keyboard, get_confirm_delete_keyboard, location_keyboard
+from src.keyboards.groups import get_admin_keyboard, get_user_keyboard, go_to_group_keyboard, get_group_main_keyboard, get_confirm_delete_keyboard, location_keyboard, get_group_reply_keyboard
 from src.fsm.states import CreateGroup, JoinGroup
 from src.services.groups import (
     get_user_groups, is_group_creator, get_group_members, create_group_service,
-    join_group_by_code_service, leave_group_service, delete_group_service, switch_group_service
+    join_group_by_code_service, leave_group_service, delete_group_service, switch_group_service, find_best_match, set_match_status
 )
+from src.constants import WELCOME_BONUS, MIN_ANSWERS_FOR_MATCH, POINTS_FOR_MATCH, POINTS_TO_CONNECT
+import asyncio
 
 router = Router()
 
@@ -132,6 +134,8 @@ async def show_user_groups(message: types.Message, state: FSMContext) -> None:
         types.InlineKeyboardButton(text="Join another group with code", callback_data="join_another_group_with_code")
     ])
     sent = await message.answer(text, reply_markup=kb, parse_mode="HTML")
+    # Показываем обычную клавиатуру с кнопкой мэтча
+    await message.answer("You can find your best match at any time:", reply_markup=get_group_reply_keyboard())
     data = await state.get_data()
     ids = data.get("my_groups_msg_ids", [])
     ids.append(sent.message_id)
@@ -252,14 +256,24 @@ async def show_group_welcome_and_question(message, user_id, group_id):
         group = next((g for g in groups if g["id"] == group_id), None)
         group_name = group["name"] if group else "this group"
         await message.answer(
-            f"Welcome back to {group_name}. Your balance is {balance} points.",
-            reply_markup=InlineKeyboardMarkup(
-                inline_keyboard=[[InlineKeyboardButton(text="Load answered questions", callback_data="load_answered_questions")]]
-            )
+            f"Welcome back to {group_name}. Your balance is {balance}💎 points.",
+            reply_markup=get_group_reply_keyboard()
         )
+        # Показываем кнопку Load answered questions, если есть хотя бы один ответ (до новых вопросов)
         async with AsyncSessionLocal() as session:
             user = await session.execute(select(User).where(User.telegram_user_id == user_id))
             user = user.scalar()
+            answers_count = await session.execute(
+                select(Answer).where(
+                    Answer.user_id == user.id,
+                    Answer.value.isnot(None),
+                    Answer.question_id.in_(select(Question.id).where(Question.group_id == group_id, Question.is_deleted == 0))
+                )
+            )
+            answers_count = len(answers_count.scalars().all())
+            if answers_count > 0:
+                kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="Load answered questions", callback_data="load_answered_questions")]])
+                await message.answer(".", reply_markup=kb)
             next_q = await get_next_unanswered_question(session, group_id, user.id)
             if next_q:
                 await send_question_to_user(bot, user, next_q)
@@ -306,7 +320,149 @@ async def process_invite_code(message: types.Message, state: FSMContext):
     if not group:
         await message.answer("Group not found. Check the code and try again.")
         return
-    await message.answer(f"You joined group '{group['name']}'!", reply_markup=go_to_group_keyboard(group["id"], group["name"]))
+    await message.answer(f"You joined group '{group['name']}'! 🎉\nYou received a welcome bonus: +{WELCOME_BONUS} points.", reply_markup=go_to_group_keyboard(group["id"], group["name"]))
     await state.clear()
+
+@router.callback_query(F.data.startswith("find_match_"))
+async def cb_find_match(callback: types.CallbackQuery, state: FSMContext):
+    group_id = int(callback.data.split("_")[-1])
+    user_id = callback.from_user.id
+    from src.models import User, Answer, GroupMember
+    from sqlalchemy import select
+    from src.db import AsyncSessionLocal
+    async with AsyncSessionLocal() as session:
+        user = await session.execute(select(User).where(User.telegram_user_id == user_id))
+        user = user.scalar()
+        if not user:
+            await callback.answer("User not found.", show_alert=True)
+            return
+        # Считаем количество ответов пользователя в группе
+        answers_count = await session.execute(
+            select(Answer).where(
+                Answer.user_id == user.id,
+                Answer.value.isnot(None),
+                Answer.question_id.in_(select(Question.id).where(Question.group_id == group_id, Question.is_deleted == 0))
+            )
+        )
+        answers_count = len(answers_count.scalars().all())
+        member = await session.execute(select(GroupMember).where(GroupMember.user_id == user.id, GroupMember.group_id == group_id))
+        member = member.scalar()
+        if not member or member.balance < POINTS_FOR_MATCH:
+            await callback.message.answer(f"Not enough points for match. Your balance: {member.balance if member else 0}. Answer more questions or create new ones to earn points!")
+            return
+        if answers_count < MIN_ANSWERS_FOR_MATCH:
+            await callback.message.answer(f"You need to answer at least {MIN_ANSWERS_FOR_MATCH} questions to get a match. You have answered: {answers_count}. Keep answering or create new questions!")
+            return
+        # Поиск мэтча
+        match = await find_best_match(user_id, group_id)
+        if not match:
+            await callback.answer("No valid matches found yet. Try answering more questions!", show_alert=True)
+            return
+        # Списываем баллы
+        member.balance -= POINTS_FOR_MATCH
+        await session.commit()
+        # Показываем UX мэтча
+        text = f"<b>{match['nickname']}</b>\nCohesion: <b>{match['similarity']}%</b> ({match['common_questions']} questions, matched from {match['valid_users_count']} users)"
+        kb = types.InlineKeyboardMarkup(inline_keyboard=[
+            [types.InlineKeyboardButton(text=f"AI Chemistry Insights and Chat ({POINTS_TO_CONNECT}💎)", callback_data=f"match_chat_{match['user_id']}")],
+            [types.InlineKeyboardButton(text="Show again", callback_data=f"match_postpone_{match['user_id']}")],
+            [types.InlineKeyboardButton(text="Don't show again", callback_data=f"match_hide_{match['user_id']}")]
+        ])
+        if match['photo_url']:
+            await callback.message.answer_photo(match['photo_url'], caption=text, reply_markup=kb, parse_mode="HTML")
+        else:
+            await callback.message.answer(text, reply_markup=kb, parse_mode="HTML")
+        await callback.answer()
+
+@router.callback_query(F.data.startswith("match_hide_"))
+async def cb_match_hide(callback: types.CallbackQuery, state: FSMContext):
+    user_id = callback.from_user.id
+    data = callback.data.split("_")
+    match_user_id = int(data[-1])
+    # Получаем group_id из текущей группы пользователя
+    async with AsyncSessionLocal() as session:
+        user = await session.execute(select(User).where(User.telegram_user_id == user_id))
+        user = user.scalar()
+        group_id = user.current_group_id if user else None
+    if group_id:
+        await set_match_status(user_id, group_id, match_user_id, "hidden")
+        # Удаляем сообщения мэтча (фото/текст)
+        try:
+            await callback.message.delete()
+        except Exception:
+            pass
+        # Отправляем уведомление и удаляем его через 5 секунд
+        notif = await callback.message.answer("This user will no longer be shown to you.")
+        await asyncio.sleep(5)
+        try:
+            await notif.delete()
+        except Exception:
+            pass
+    await callback.answer()
+
+@router.callback_query(F.data.startswith("match_postpone_"))
+async def cb_match_postpone(callback: types.CallbackQuery, state: FSMContext):
+    user_id = callback.from_user.id
+    data = callback.data.split("_")
+    match_user_id = int(data[-1])
+    # Получаем group_id из текущей группы пользователя
+    async with AsyncSessionLocal() as session:
+        user = await session.execute(select(User).where(User.telegram_user_id == user_id))
+        user = user.scalar()
+        group_id = user.current_group_id if user else None
+        if group_id:
+            # Удаляем статус postponed/hidden для этого мэтча (возвращаем в пул)
+            await session.execute(
+                text("DELETE FROM match_statuses WHERE user_id = :user_id AND group_id = :group_id AND match_user_id = :match_user_id"),
+                {"user_id": user.id, "group_id": group_id, "match_user_id": match_user_id}
+            )
+            await session.commit()
+            # Удаляем сообщения мэтча (фото/текст)
+            try:
+                await callback.message.delete()
+            except Exception:
+                pass
+            # Удаляем исходное сообщение с кнопкой мэтча, если оно есть
+            data = await state.get_data()
+            vibing_msg_id = data.get("vibing_msg_id")
+            if vibing_msg_id:
+                try:
+                    await callback.message.bot.delete_message(callback.message.chat.id, vibing_msg_id)
+                except Exception:
+                    pass
+                await state.update_data(vibing_msg_id=None)
+            # Отправляем уведомление и удаляем его через 5 секунд
+            notif = await callback.message.answer("This match will be shown to you again.")
+            await asyncio.sleep(5)
+            try:
+                await notif.delete()
+            except Exception:
+                pass
+    await callback.answer()
+
+@router.message(F.text == f"Who is vibing the most right now ({POINTS_FOR_MATCH}💎)")
+async def handle_vibing_button(message: types.Message, state: FSMContext):
+    # Сохраняем message_id сообщения с кнопкой мэтча
+    await state.update_data(vibing_msg_id=message.message_id)
+    # Имитация нажатия инлайн-кнопки мэтча
+    async with AsyncSessionLocal() as session:
+        user = await session.execute(select(User).where(User.telegram_user_id == message.from_user.id))
+        user = user.scalar()
+        group_id = user.current_group_id if user else None
+    if not group_id:
+        await message.answer("You are not in a group.")
+        return
+    # Импортируем и вызываем логику мэтча
+    from src.handlers.groups import cb_find_match
+    class DummyCallback:
+        def __init__(self, message, user_id, group_id):
+            self.message = message
+            self.from_user = type('User', (), {'id': user_id})()
+            self.data = f"find_match_{group_id}"
+            self.bot = message.bot
+        async def answer(self, *args, **kwargs):
+            pass
+    callback = DummyCallback(message, message.from_user.id, group_id)
+    await cb_find_match(callback, state)
 
 # TODO: Перенести сюда все group-related хендлеры (create, join, switch, delete, leave, confirm/cancel) 

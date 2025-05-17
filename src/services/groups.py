@@ -1,11 +1,12 @@
 from typing import List, Dict, Optional, Any
 from src.db import AsyncSessionLocal
-from src.models import User, Group, GroupMember, GroupCreator
+from src.models import User, Group, GroupMember, GroupCreator, Answer, Question, MatchStatus
 from src.keyboards.groups import get_admin_keyboard, get_user_keyboard, get_group_main_keyboard
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 import os, logging
 from sqlalchemy import select, func
 from src.utils import generate_unique_invite_code
+from src.constants import WELCOME_BONUS
 
 ADMIN_USER_ID = int(os.getenv('ADMIN_USER_ID', 0))
 
@@ -197,7 +198,7 @@ async def join_group_by_code_service(user_id: int, code: str) -> dict | None:
         member = await session.execute(select(GroupMember).where(GroupMember.user_id == user.id, GroupMember.group_id == group.id))
         member = member.scalar()
         if not member:
-            member = GroupMember(user_id=user.id, group_id=group.id)
+            member = GroupMember(user_id=user.id, group_id=group.id, balance=WELCOME_BONUS)
             session.add(member)
             await session.commit()
         return {"id": group.id, "name": group.name}
@@ -263,4 +264,104 @@ async def leave_group_service(user_id: int, group_id: int) -> dict:
         if not groups:
             user.current_group_id = None
             await session.commit()
-        return {"ok": True, "groups": [{"id": g.id, "name": g.name} for g in groups]} 
+        return {"ok": True, "groups": [{"id": g.id, "name": g.name} for g in groups]}
+
+async def find_best_match(user_id: int, group_id: int, exclude_user_ids: list[int] = None) -> dict | None:
+    """Найти лучшего мэтча для пользователя в группе по максимальному совпадению ответов, исключая hidden/postponed. Similarity: 1 - (Σ|A_i-B_i|)/(4*N)."""
+    exclude_user_ids = exclude_user_ids or []
+    async with AsyncSessionLocal() as session:
+        user = await session.execute(select(User).where(User.telegram_user_id == user_id))
+        user = user.scalar()
+        if not user:
+            return None
+        # Исключаем пользователей с match_status
+        statuses = await session.execute(select(MatchStatus.match_user_id, MatchStatus.status).where(
+            MatchStatus.user_id == user.id, MatchStatus.group_id == group_id))
+        for match_user_id, status in statuses.all():
+            if status in ("hidden", "postponed"):
+                exclude_user_ids.append(match_user_id)
+        # Получаем все ответы пользователя по вопросам группы
+        user_answers = await session.execute(
+            select(Answer.question_id, Answer.value).where(
+                Answer.user_id == user.id,
+                Answer.value.isnot(None),
+                Answer.question_id.in_(select(Question.id).where(Question.group_id == group_id, Question.is_deleted == 0))
+            )
+        )
+        user_answers = {row[0]: row[1] for row in user_answers.all()}
+        if not user_answers:
+            return None
+        # Получаем всех других участников группы
+        members = await session.execute(select(GroupMember).where(GroupMember.group_id == group_id, GroupMember.user_id != user.id))
+        members = members.scalars().all()
+        # Считаем количество валидных пользователей для мэтча
+        valid_users_count = 0
+        best_match = None
+        best_score = -1
+        max_distance = 4
+        best_common_questions = 0
+        for member in members:
+            if member.user_id in exclude_user_ids:
+                continue
+            # Ответы мэтча
+            match_answers = await session.execute(
+                select(Answer.question_id, Answer.value).where(
+                    Answer.user_id == member.user_id,
+                    Answer.value.isnot(None),
+                    Answer.question_id.in_(user_answers.keys())
+                )
+            )
+            match_answers = {row[0]: row[1] for row in match_answers.all()}
+            if not match_answers:
+                continue
+            # Считаем similarity по формуле
+            total = 0
+            dist_sum = 0
+            for qid, uval in user_answers.items():
+                if qid in match_answers:
+                    mval = match_answers[qid]
+                    total += 1
+                    dist_sum += abs(uval - mval)
+            if total < 3:
+                continue  # слишком мало общих вопросов
+            valid_users_count += 1
+            similarity = 1 - (dist_sum / (max_distance * total))
+            percent = int(similarity * 100)
+            if percent > best_score:
+                best_score = percent
+                best_match = member
+                best_common_questions = total
+        if best_match:
+            # Получаем ник и фото мэтча
+            match_user = await session.execute(select(User).where(User.id == best_match.user_id))
+            match_user = match_user.scalar()
+            return {
+                "user_id": best_match.user_id,
+                "nickname": best_match.nickname,
+                "photo_url": best_match.photo_url,
+                "similarity": best_score,
+                "common_questions": best_common_questions,
+                "valid_users_count": valid_users_count,
+                "telegram_user_id": match_user.telegram_user_id if match_user else None
+            }
+        return None
+
+async def set_match_status(user_id: int, group_id: int, match_user_id: int, status: str):
+    """Установить статус мэтча ('hidden' или 'postponed')."""
+    async with AsyncSessionLocal() as session:
+        user = await session.execute(select(User).where(User.telegram_user_id == user_id))
+        user = user.scalar()
+        if not user:
+            return
+        obj = await session.execute(select(MatchStatus).where(
+            MatchStatus.user_id == user.id,
+            MatchStatus.group_id == group_id,
+            MatchStatus.match_user_id == match_user_id
+        ))
+        obj = obj.scalar()
+        if obj:
+            obj.status = status
+        else:
+            obj = MatchStatus(user_id=user.id, group_id=group_id, match_user_id=match_user_id, status=status)
+            session.add(obj)
+        await session.commit() 

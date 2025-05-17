@@ -11,14 +11,52 @@ from src.services.questions import (
     moderate_question,
     get_group_members,
 )
+from src.constants import POINTS_FOR_NEW_QUESTION, POINTS_FOR_ANSWER
+from src.db import AsyncSessionLocal
+from sqlalchemy import select, and_
+from src.models import User, GroupMember, Question, Answer, Group
 
 router = Router()
 
 # --- Handlers for questions/answers ---
 
-# @dp.message(F.text & ~F.text.startswith('/'))
-# async def handle_new_question(message: types.Message, state: FSMContext):
-#     ... (весь код временно закомментирован для диагностики)
+@router.message(F.text & ~F.text.startswith('/'))
+async def handle_new_question(message: types.Message, state: FSMContext):
+    """Создание нового вопроса: сохраняем вопрос, начисляем баллы автору."""
+    text = message.text.strip()
+    if len(text) < 5:
+        await message.answer("Question too short. Please enter a more detailed question.")
+        return
+    user_id = message.from_user.id
+    async with AsyncSessionLocal() as session:
+        user = await session.execute(select(User).where(User.telegram_user_id == user_id))
+        user = user.scalar()
+        if not user or not user.current_group_id:
+            await message.answer("You must join a group before asking questions.")
+            return
+        # Проверка на дубликаты
+        is_dup = await is_duplicate_question(session, user.current_group_id, text)
+        if is_dup:
+            await message.answer("This question already exists in the group.")
+            return
+        # Модерация
+        ok, reason = await moderate_question(text)
+        if not ok:
+            await message.answer(reason or "Question rejected by moderation.")
+            return
+        # Сохраняем вопрос
+        q = Question(group_id=user.current_group_id, author_id=user.id, text=text)
+        session.add(q)
+        # Начисляем баллы автору
+        member = await session.execute(select(GroupMember).where(GroupMember.user_id == user.id, GroupMember.group_id == user.current_group_id))
+        member = member.scalar()
+        if member:
+            member.balance += POINTS_FOR_NEW_QUESTION
+        await session.commit()
+        await message.answer(f"✅ Question added! You received +{POINTS_FOR_NEW_QUESTION} points.")
+        # Сразу показываем вопрос автору с кнопками ответов
+        from src.handlers.questions import send_question_to_user
+        await send_question_to_user(message.bot, user, q)
 
 @router.callback_query(F.data.startswith("answer_"))
 async def cb_answer_question(callback: types.CallbackQuery, state: FSMContext):
@@ -60,7 +98,7 @@ async def cb_answer_question(callback: types.CallbackQuery, state: FSMContext):
             member = await session.execute(select(GroupMember).where(GroupMember.user_id == user.id, GroupMember.group_id == question.group_id))
             member = member.scalar()
             if member:
-                member.balance += 1
+                member.balance += POINTS_FOR_ANSWER
         ans.value = value
         ans.is_skipped = int(value == 0)
         await session.commit()

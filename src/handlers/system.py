@@ -60,7 +60,7 @@ async def start(message: types.Message, state: FSMContext):
         onboarded = await is_onboarded(user_id, group["id"])
         if onboarded:
             balance = await get_group_balance(user_id, group["id"])
-            await message.answer(f"Welcome back to {group['name']}. Your balance is {balance} points.",
+            await message.answer(f"Welcome back to {group['name']}. Your balance is {balance}💎 points.",
                 reply_markup=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="Load answered questions", callback_data="load_answered_questions")]]))
             async with AsyncSessionLocal() as session:
                 user = await session.execute(select(User).where(User.telegram_user_id == user_id))
@@ -94,7 +94,7 @@ async def start(message: types.Message, state: FSMContext):
         onboarded = await is_onboarded(user_id, group["id"])
         if onboarded:
             balance = await get_group_balance(user_id, group["id"])
-            await message.answer(f"Welcome back to {group['name']}. Your balance is {balance} points.",
+            await message.answer(f"Welcome back to {group['name']}. Your balance is {balance}💎 points.",
                 reply_markup=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="Load answered questions", callback_data="load_answered_questions")]]))
             async with AsyncSessionLocal() as session:
                 user = await session.execute(select(User).where(User.telegram_user_id == user_id))
