@@ -37,6 +37,7 @@ class GroupMember(Base):
     geolocation_lat = Column(Float)
     geolocation_lon = Column(Float)
     city = Column(String(128), nullable=True)
+    country = Column(String(128), nullable=True)  # Country of the user (optional)
     role = Column(String(32), default='member')
     joined_at = Column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
     balance = Column(Integer, default=0, nullable=False)

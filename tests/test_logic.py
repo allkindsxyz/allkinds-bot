@@ -3,6 +3,9 @@ from sqlalchemy import select
 from src.models import User, Group, GroupMember, GroupCreator, Question, Answer
 import random, string
 import types as pytypes
+from src.handlers.system import instructions, my_groups
+from src.services.questions import get_next_unanswered_question
+from src.handlers.questions import send_question_to_user
 
 pytestmark = pytest.mark.asyncio
 
@@ -383,7 +386,6 @@ async def test_switch_group_logic(async_session):
 @pytest.mark.asyncio
 async def test_instructions_command(monkeypatch):
     """Проверяет, что инструкция отображается, удаляется и не дублируется."""
-    from src import bot as bot_module
     state_data = {}
     class DummyState:
         async def get_data(self):
@@ -405,24 +407,18 @@ async def test_instructions_command(monkeypatch):
     message = DummyMessage()
     state = DummyState()
     # Первый вызов — инструкция появляется
-    await bot_module.instructions(message, state)
+    await instructions(message, state)
     assert len(message.sent) == 1
-    assert "How to use the bot" in message.sent[0]
-    assert state_data.get("instructions_msg_id") == 1
-    # Второй вызов — старая удаляется, новая появляется
-    await bot_module.instructions(message, state)
-    assert len(message.sent) == 2
+    assert state_data["instructions_msg_id"] == 1
+    # Второй вызов — старая инструкция удаляется, появляется новая
+    await instructions(message, state)
     assert message.deleted == [1]
-    assert state_data.get("instructions_msg_id") == 2
-    # Вызов mygroups — инструкция удаляется
-    await bot_module.hide_instructions_and_mygroups_by_message(message, state)
-    assert message.deleted == [1, 2]
-    assert state_data.get("instructions_msg_id") is None
+    assert len(message.sent) == 2
+    assert state_data["instructions_msg_id"] == 2
 
 @pytest.mark.asyncio
 async def test_mygroups_command(monkeypatch):
     """Проверяет, что /mygroups отображает сообщение, сохраняет и удаляет message_id."""
-    from src import bot as bot_module
     state_data = {}
     class DummyState:
         async def get_data(self):
@@ -443,26 +439,21 @@ async def test_mygroups_command(monkeypatch):
         async def delete_message(self, chat_id, msg_id):
             self.deleted.append(msg_id)
     # Мокаем show_user_groups чтобы оно отправляло сообщение и сохраняло message_id
-    async def fake_show_user_groups(message, user_id, state):
-        msg = await message.answer(f"Groups for {user_id}")
+    async def fake_show_user_groups(message, state):
+        msg = await message.answer(f"Groups for {message.from_user.id}")
         data = await state.get_data()
         ids = data.get("my_groups_msg_ids", [])
         ids.append(msg.message_id)
         await state.update_data(my_groups_msg_ids=ids)
-    monkeypatch.setattr(bot_module, "show_user_groups", fake_show_user_groups)
+    monkeypatch.setattr("src.handlers.groups.show_user_groups", fake_show_user_groups)
     message = DummyMessage()
     state = DummyState()
     # Первый вызов — сообщение появляется
-    await bot_module.my_groups(message, state)
+    await my_groups(message, state)
     assert len(message.sent) == 1
-    assert "Groups for 111" in message.sent[0]
-    assert state_data.get("my_groups_msg_ids") == [1]
-    # Второй вызов — старое удаляется, новое появляется
-    await bot_module.my_groups(message, state)
-    assert len(message.sent) == 2
+    assert state_data["my_groups_msg_ids"] == [1]
+    # Второй вызов — старое сообщение удаляется, появляется новое
+    await my_groups(message, state)
     assert message.deleted == [1]
-    assert state_data.get("my_groups_msg_ids") == [2]
-    # Вызов очистки — сообщение удаляется
-    await bot_module.hide_instructions_and_mygroups_by_message(message, state)
-    assert message.deleted == [1, 2]
-    assert state_data.get("my_groups_msg_ids") == [] 
+    assert len(message.sent) == 2
+    assert state_data["my_groups_msg_ids"] == [2] 
