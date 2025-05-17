@@ -17,6 +17,8 @@ from src.services.groups import (
 )
 from src.constants import WELCOME_BONUS, MIN_ANSWERS_FOR_MATCH, POINTS_FOR_MATCH, POINTS_TO_CONNECT
 import asyncio
+from src.config import ALLKINDS_CHAT_BOT_USERNAME
+from urllib.parse import quote
 
 router = Router()
 
@@ -320,7 +322,7 @@ async def process_invite_code(message: types.Message, state: FSMContext):
     if not group:
         await message.answer("Group not found. Check the code and try again.")
         return
-    await message.answer(f"You joined group '{group['name']}'! 🎉\nYou received a welcome bonus: +{WELCOME_BONUS} points.", reply_markup=go_to_group_keyboard(group["id"], group["name"]))
+    await message.answer(f"You joined group '{group['name']}'! 🎉\nYou received a welcome bonus: +{WELCOME_BONUS}💎 points.", reply_markup=go_to_group_keyboard(group["id"], group["name"]))
     await state.clear()
 
 @router.callback_query(F.data.startswith("find_match_"))
@@ -464,5 +466,51 @@ async def handle_vibing_button(message: types.Message, state: FSMContext):
             pass
     callback = DummyCallback(message, message.from_user.id, group_id)
     await cb_find_match(callback, state)
+
+@router.callback_query(F.data.startswith("match_chat_"))
+async def cb_match_chat(callback: types.CallbackQuery, state: FSMContext):
+    user_id = callback.from_user.id
+    match_user_id = int(callback.data.split("_")[-1])
+    # Проверяем баланс
+    async with AsyncSessionLocal() as session:
+        user = await session.execute(select(User).where(User.telegram_user_id == user_id))
+        user = user.scalar()
+        group_id = user.current_group_id if user else None
+        member = await session.execute(select(GroupMember).where(GroupMember.user_id == user.id, GroupMember.group_id == group_id))
+        member = member.scalar()
+        if not member or member.balance < POINTS_TO_CONNECT:
+            await callback.message.answer(f"Not enough points to start chat. Your balance: {member.balance if member else 0}. Answer more questions or create new ones to earn points!")
+            await callback.answer()
+            return
+        # Списываем баллы
+        member.balance -= POINTS_TO_CONNECT
+        await session.commit()
+    # Удаляем сообщения мэтча (фото/текст)
+    try:
+        await callback.message.delete()
+    except Exception:
+        pass
+    # Удаляем исходное сообщение с кнопкой мэтча, если оно есть
+    data = await state.get_data()
+    vibing_msg_id = data.get("vibing_msg_id")
+    if vibing_msg_id:
+        try:
+            await callback.message.bot.delete_message(callback.message.chat.id, vibing_msg_id)
+        except Exception:
+            pass
+        await state.update_data(vibing_msg_id=None)
+    # Показываем url-кнопку для перехода в чат-бот
+    param = quote(f"match_{user_id}_{match_user_id}")
+    link = f"https://t.me/{ALLKINDS_CHAT_BOT_USERNAME}?start={param}"
+    kb = types.InlineKeyboardMarkup(inline_keyboard=[
+        [types.InlineKeyboardButton(text="Go to Allkinds Chat Bot", url=link)]
+    ])
+    notif = await callback.message.answer("Click the button below to start your private chat:", reply_markup=kb)
+    await asyncio.sleep(5)
+    try:
+        await notif.delete()
+    except Exception:
+        pass
+    await callback.answer()
 
 # TODO: Перенести сюда все group-related хендлеры (create, join, switch, delete, leave, confirm/cancel) 

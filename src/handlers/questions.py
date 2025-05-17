@@ -53,7 +53,7 @@ async def handle_new_question(message: types.Message, state: FSMContext):
         if member:
             member.balance += POINTS_FOR_NEW_QUESTION
         await session.commit()
-        await message.answer(f"✅ Question added! You received +{POINTS_FOR_NEW_QUESTION} points.")
+        await message.answer(f"✅ Question added! You received +{POINTS_FOR_NEW_QUESTION}💎 points.")
         # Сразу показываем вопрос автору с кнопками ответов
         from src.handlers.questions import send_question_to_user
         await send_question_to_user(message.bot, user, q)
