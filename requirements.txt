@@ -1,4 +1,5 @@
 aiogram
 sqlalchemy
 alembic
-python-dotenv 
+python-dotenv
+psycopg2-binary 
