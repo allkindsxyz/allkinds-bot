@@ -66,9 +66,11 @@ async def start(message: types.Message, state: FSMContext):
                 user = await session.execute(select(User).where(User.telegram_user_id == user_id))
                 user = user.scalar()
                 if user is None:
-                    print(f"[ERROR] User not found in DB for telegram_user_id={user_id} in /start handler")
-                    await message.answer("❌ Internal error: user not found. Please try again later or contact support.")
-                    return
+                    print(f"[INFO] Creating new user in DB for telegram_user_id={user_id} in /start handler")
+                    user = User(telegram_user_id=user_id)
+                    session.add(user)
+                    await session.commit()
+                    await session.refresh(user)
                 next_q = await get_next_unanswered_question(session, group["id"], user.id)
                 if next_q:
                     await send_question_to_user(bot, user, next_q)
@@ -83,9 +85,11 @@ async def start(message: types.Message, state: FSMContext):
         user = await session.execute(select(User).where(User.telegram_user_id == user_id))
         user = user.scalar()
         if user is None:
-            print(f"[ERROR] User not found in DB for telegram_user_id={user_id} in /start handler (multi-group)")
-            await message.answer("❌ Internal error: user not found. Please try again later or contact support.")
-            return
+            print(f"[INFO] Creating new user in DB for telegram_user_id={user_id} in /start handler (multi-group)")
+            user = User(telegram_user_id=user_id)
+            session.add(user)
+            await session.commit()
+            await session.refresh(user)
         memberships = await session.execute(select(GroupMember).where(GroupMember.user_id == user.id))
         memberships = memberships.scalars().all()
     if not groups:
@@ -108,9 +112,11 @@ async def start(message: types.Message, state: FSMContext):
                 user = await session.execute(select(User).where(User.telegram_user_id == user_id))
                 user = user.scalar()
                 if user is None:
-                    print(f"[ERROR] User not found in DB for telegram_user_id={user_id} in /start handler (multi-group)")
-                    await message.answer("❌ Internal error: user not found. Please try again later or contact support.")
-                    return
+                    print(f"[INFO] Creating new user in DB for telegram_user_id={user_id} in /start handler (multi-group)")
+                    user = User(telegram_user_id=user_id)
+                    session.add(user)
+                    await session.commit()
+                    await session.refresh(user)
                 next_q = await get_next_unanswered_question(session, group["id"], user.id)
                 if next_q:
                     await send_question_to_user(bot, user, next_q)
@@ -128,9 +134,11 @@ async def start(message: types.Message, state: FSMContext):
         user = await session.execute(select(User).where(User.telegram_user_id == user_id))
         user = user.scalar()
         if user is None:
-            print(f"[ERROR] User not found in DB for telegram_user_id={user_id} in /start handler (multi-group)")
-            await message.answer("❌ Internal error: user not found. Please try again later or contact support.")
-            return
+            print(f"[INFO] Creating new user in DB for telegram_user_id={user_id} in /start handler (multi-group)")
+            user = User(telegram_user_id=user_id)
+            session.add(user)
+            await session.commit()
+            await session.refresh(user)
         group_id = user.current_group_id or (groups[0]["id"] if groups else None)
         if group_id:
             next_q = await get_next_unanswered_question(session, group_id, user.id)
