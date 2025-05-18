@@ -5,6 +5,7 @@ from aiohttp import web
 from aiogram.webhook.aiohttp_server import SimpleRequestHandler, setup_application
 from src.loader import bot, dp
 from src.routers import all_routers
+from src.services.groups import ensure_admin_in_db
 
 # Регистрация всех роутеров
 for router in all_routers:
@@ -35,6 +36,7 @@ def create_app():
 
 async def main():
     logging.basicConfig(level=logging.INFO)
+    await ensure_admin_in_db()
     if WEBHOOK_URL:
         print(f"[INFO] Starting bot in WEBHOOK mode: {WEBHOOK_URL}")
         app = create_app()
