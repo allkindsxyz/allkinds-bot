@@ -81,6 +81,8 @@ def run_migrations_online() -> None:
 def get_url():
     return f"postgresql+psycopg2://{POSTGRES_USER}:{POSTGRES_PASSWORD}@{POSTGRES_HOST}:{POSTGRES_PORT}/{POSTGRES_DB}"
 
+# Устанавливаем строку подключения из переменных окружения
+config.set_main_option("sqlalchemy.url", get_url())
 
 if context.is_offline_mode():
     run_migrations_offline()

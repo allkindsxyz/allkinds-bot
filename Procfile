@@ -1,0 +1,1 @@
+web: alembic upgrade head && python3 -m src.bot 
