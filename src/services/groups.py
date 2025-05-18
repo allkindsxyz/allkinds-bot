@@ -200,6 +200,7 @@ async def join_group_by_code_service(user_id: int, code: str) -> dict | None:
         if not member:
             member = GroupMember(user_id=user.id, group_id=group.id, balance=WELCOME_BONUS)
             session.add(member)
+            user.current_group_id = group.id
             await session.commit()
         return {"id": group.id, "name": group.name}
 
