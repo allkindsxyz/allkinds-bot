@@ -240,54 +240,59 @@ async def group_desc_step(message: types.Message, state: FSMContext):
     await state.clear()
 
 async def show_group_welcome_and_question(message, user_id, group_id):
-    from src.services.groups import get_group_balance
-    from src.services.groups import is_onboarded
-    from src.services.groups import get_user_groups
-    from src.services.questions import get_next_unanswered_question
-    from src.handlers.questions import send_question_to_user
-    from src.loader import bot
-    from sqlalchemy import select
-    from src.db import AsyncSessionLocal
-    from src.models import User
-    from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+    import logging
+    try:
+        from src.services.groups import get_group_balance
+        from src.services.groups import is_onboarded
+        from src.services.groups import get_user_groups
+        from src.services.questions import get_next_unanswered_question
+        from src.handlers.questions import send_question_to_user
+        from src.loader import bot
+        from sqlalchemy import select
+        from src.db import AsyncSessionLocal
+        from src.models import User
+        from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 
-    onboarded = await is_onboarded(user_id, group_id)
-    if onboarded:
-        balance = await get_group_balance(user_id, group_id)
-        groups = await get_user_groups(user_id)
-        group = next((g for g in groups if g["id"] == group_id), None)
-        group_name = group["name"] if group else "this group"
-        await message.answer(
-            f"Welcome back to {group_name}. Your balance is {balance}💎 points.",
-            reply_markup=get_group_reply_keyboard()
-        )
-        # Показываем кнопку Load answered questions, если есть хотя бы один ответ (до новых вопросов)
-        async with AsyncSessionLocal() as session:
-            user = await session.execute(select(User).where(User.telegram_user_id == user_id))
-            user = user.scalar()
-            answers_count = await session.execute(
-                select(Answer).where(
-                    Answer.user_id == user.id,
-                    Answer.value.isnot(None),
-                    Answer.question_id.in_(select(Question.id).where(Question.group_id == group_id, Question.is_deleted == 0))
-                )
+        onboarded = await is_onboarded(user_id, group_id)
+        if onboarded:
+            balance = await get_group_balance(user_id, group_id)
+            groups = await get_user_groups(user_id)
+            group = next((g for g in groups if g["id"] == group_id), None)
+            group_name = group["name"] if group else "this group"
+            await message.answer(
+                f"Welcome back to {group_name}. Your balance is {balance}💎 points.",
+                reply_markup=get_group_reply_keyboard()
             )
-            answers_count = len(answers_count.scalars().all())
-            if answers_count > 0:
-                kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="Load answered questions", callback_data="load_answered_questions")]])
-                await message.answer(".", reply_markup=kb)
-            next_q = await get_next_unanswered_question(session, group_id, user.id)
-            if next_q:
-                await send_question_to_user(bot, user, next_q)
-            else:
-                await message.answer("No new questions in this group yet.")
-    else:
-        await message.answer("Let's set up your profile for this group!\nEnter your nickname:", reply_markup=types.ReplyKeyboardRemove())
-        from src.fsm.states import Onboarding
-        from aiogram.fsm.context import FSMContext
-        state = FSMContext(message.bot, message.chat.id, message.from_user.id)
-        await state.update_data(group_id=group_id)
-        await state.set_state(Onboarding.nickname)
+            # Показываем кнопку Load answered questions, если есть хотя бы один ответ (до новых вопросов)
+            async with AsyncSessionLocal() as session:
+                user = await session.execute(select(User).where(User.telegram_user_id == user_id))
+                user = user.scalar()
+                answers_count = await session.execute(
+                    select(Answer).where(
+                        Answer.user_id == user.id,
+                        Answer.value.isnot(None),
+                        Answer.question_id.in_(select(Question.id).where(Question.group_id == group_id, Question.is_deleted == 0))
+                    )
+                )
+                answers_count = len(answers_count.scalars().all())
+                if answers_count > 0:
+                    kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="Load answered questions", callback_data="load_answered_questions")]])
+                    await message.answer(".", reply_markup=kb)
+                next_q = await get_next_unanswered_question(session, group_id, user.id)
+                if next_q:
+                    await send_question_to_user(bot, user, next_q)
+                else:
+                    await message.answer("No new questions in this group yet.")
+        else:
+            await message.answer("Let's set up your profile for this group!\nEnter your nickname:", reply_markup=types.ReplyKeyboardRemove())
+            from src.fsm.states import Onboarding
+            from aiogram.fsm.context import FSMContext
+            state = FSMContext(message.bot, message.chat.id, message.from_user.id)
+            await state.update_data(group_id=group_id)
+            await state.set_state(Onboarding.nickname)
+    except Exception as e:
+        logging.exception("Ошибка в show_group_welcome_and_question")
+        raise
 
 @router.callback_query(F.data.startswith("switch_to_group_"))
 async def cb_switch_to_group(callback: types.CallbackQuery, state: FSMContext):
@@ -444,28 +449,31 @@ async def cb_match_postpone(callback: types.CallbackQuery, state: FSMContext):
 
 @router.message(F.text == f"Who is vibing the most right now ({POINTS_FOR_MATCH}💎)")
 async def handle_vibing_button(message: types.Message, state: FSMContext):
-    # Сохраняем message_id сообщения с кнопкой мэтча
-    await state.update_data(vibing_msg_id=message.message_id)
-    # Имитация нажатия инлайн-кнопки мэтча
-    async with AsyncSessionLocal() as session:
-        user = await session.execute(select(User).where(User.telegram_user_id == message.from_user.id))
-        user = user.scalar()
-        group_id = user.current_group_id if user else None
-    if not group_id:
-        await message.answer("You are not in a group.")
-        return
-    # Импортируем и вызываем логику мэтча
-    from src.handlers.groups import cb_find_match
-    class DummyCallback:
-        def __init__(self, message, user_id, group_id):
-            self.message = message
-            self.from_user = type('User', (), {'id': user_id})()
-            self.data = f"find_match_{group_id}"
-            self.bot = message.bot
-        async def answer(self, *args, **kwargs):
-            pass
-    callback = DummyCallback(message, message.from_user.id, group_id)
-    await cb_find_match(callback, state)
+    import logging
+    try:
+        # Сохраняем message_id сообщения с кнопкой мэтча
+        await state.update_data(vibing_msg_id=message.message_id)
+        async with AsyncSessionLocal() as session:
+            user = await session.execute(select(User).where(User.telegram_user_id == message.from_user.id))
+            user = user.scalar()
+            group_id = user.current_group_id if user else None
+        if not group_id:
+            await message.answer("You are not in a group.")
+            return
+        from src.handlers.groups import cb_find_match
+        class DummyCallback:
+            def __init__(self, message, user_id, group_id):
+                self.message = message
+                self.from_user = type('User', (), {'id': user_id})()
+                self.data = f"find_match_{group_id}"
+                self.bot = message.bot
+            async def answer(self, *args, **kwargs):
+                pass
+        callback = DummyCallback(message, message.from_user.id, group_id)
+        await cb_find_match(callback, state)
+    except Exception as e:
+        logging.exception("Ошибка в handle_vibing_button")
+        raise
 
 @router.callback_query(F.data.startswith("match_chat_"))
 async def cb_match_chat(callback: types.CallbackQuery, state: FSMContext):
