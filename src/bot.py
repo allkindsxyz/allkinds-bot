@@ -2,6 +2,7 @@ import os
 import logging
 import asyncio
 from aiohttp import web
+from aiogram.webhook.aiohttp_server import SimpleRequestHandler, setup_application
 from src.loader import bot, dp
 from src.routers import all_routers
 
@@ -23,9 +24,13 @@ async def on_shutdown(app):
 
 def create_app():
     app = web.Application()
-    app.router.add_post(WEBHOOK_PATH, dp.webhook_handler(bot))
+    SimpleRequestHandler(
+        dispatcher=dp,
+        bot=bot,
+    ).register(app, path=WEBHOOK_PATH)
     app.on_startup.append(on_startup)
     app.on_shutdown.append(on_shutdown)
+    setup_application(app, dp, bot=bot)
     return app
 
 async def main():
