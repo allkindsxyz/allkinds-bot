@@ -11,6 +11,7 @@ from src.services.onboarding import is_onboarding_complete_service
 from src.db import AsyncSessionLocal
 from sqlalchemy import select
 from src.models import User, GroupMember
+from src.keyboards.groups import get_user_keyboard
 
 router = Router()
 print('System router loaded')
