@@ -176,9 +176,9 @@ async def create_group_service(user_id: int, name: str, description: str) -> dic
             await session.flush()
         group = Group(name=name, description=description, invite_code=invite_code, creator_user_id=user.id)
         session.add(group)
-        await session.flush()
         member = GroupMember(user_id=user.id, group_id=group.id)
         session.add(member)
+        user.current_group_id = group.id
         await session.commit()
         return {"id": group.id, "name": group.name, "invite_code": group.invite_code}
 
