@@ -1,8 +1,9 @@
-import asyncio
 import os
+import logging
+import asyncio
+from aiohttp import web
 from src.loader import bot, dp
 from src.routers import all_routers
-import logging
 
 # Регистрация всех роутеров
 for router in all_routers:
@@ -10,31 +11,38 @@ for router in all_routers:
 
 WEBHOOK_PATH = "/webhook"
 WEBHOOK_URL = os.getenv("WEBHOOK_URL")
+PORT = int(os.getenv("PORT", 8000))
+
+async def on_startup(app):
+    print(f"[INFO] Setting webhook: {WEBHOOK_URL}")
+    await bot.set_webhook(WEBHOOK_URL)
+
+async def on_shutdown(app):
+    print("[INFO] Shutting down webhook")
+    await bot.delete_webhook()
+
+def create_app():
+    app = web.Application()
+    app.router.add_post(WEBHOOK_PATH, dp.webhook_handler(bot))
+    app.on_startup.append(on_startup)
+    app.on_shutdown.append(on_shutdown)
+    return app
 
 async def main():
     logging.basicConfig(level=logging.INFO)
     if WEBHOOK_URL:
         print(f"[INFO] Starting bot in WEBHOOK mode: {WEBHOOK_URL}")
-        await bot.set_webhook(WEBHOOK_URL)
-        try:
-            await dp.start_webhook(
-                webhook_path=WEBHOOK_PATH,
-                on_startup=None,
-                on_shutdown=None,
-                skip_updates=True,
-                host="0.0.0.0",
-                port=int(os.getenv("PORT", 8000)),
-            )
-        except Exception as e:
-            print(f"[ERROR] Bot failed to start in webhook mode: {e}")
-            logging.exception(e)
+        app = create_app()
+        runner = web.AppRunner(app)
+        await runner.setup()
+        site = web.TCPSite(runner, "0.0.0.0", PORT)
+        await site.start()
+        print(f"[INFO] Webhook server started on port {PORT}")
+        while True:
+            await asyncio.sleep(3600)
     else:
         print("[INFO] Starting bot in POLLING mode (no WEBHOOK_URL set)...")
-        try:
-            await dp.start_polling(bot)
-        except Exception as e:
-            print(f"[ERROR] Bot failed to start in polling mode: {e}")
-            logging.exception(e)
+        await dp.start_polling(bot)
 
 if __name__ == "__main__":
     try:
