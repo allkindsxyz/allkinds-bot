@@ -93,6 +93,9 @@ async def start(message: types.Message, state: FSMContext):
             await session.refresh(user)
         memberships = await session.execute(select(GroupMember).where(GroupMember.user_id == user.id))
         memberships = memberships.scalars().all()
+        if memberships and not user.current_group_id:
+            user.current_group_id = memberships[0].group_id
+            await session.commit()
     if not groups:
         if is_creator:
             await message.answer("👋 Welcome, admin!", reply_markup=get_admin_keyboard([]))
