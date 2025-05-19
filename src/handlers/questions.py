@@ -15,6 +15,7 @@ from src.constants import POINTS_FOR_NEW_QUESTION, POINTS_FOR_ANSWER
 from src.db import AsyncSessionLocal
 from sqlalchemy import select, and_
 from src.models import User, GroupMember, Question, Answer, Group
+import asyncio
 
 router = Router()
 
@@ -53,7 +54,10 @@ async def handle_new_question(message: types.Message, state: FSMContext):
         if member:
             member.balance += POINTS_FOR_NEW_QUESTION
         await session.commit()
-        await message.answer(f"✅ Question added! You received +{POINTS_FOR_NEW_QUESTION}💎 points.")
+        success_message = await message.answer(f"✅ Question added! You received +{POINTS_FOR_NEW_QUESTION}💎 points.")
+        # Удаляем сообщение через 5 секунд
+        await asyncio.sleep(5)
+        await success_message.delete()
         # Сразу показываем вопрос автору с кнопками ответов
         from src.handlers.questions import send_question_to_user
         await send_question_to_user(message.bot, user, q)
@@ -133,6 +137,13 @@ async def cb_delete_question(callback: types.CallbackQuery, state: FSMContext):
         if user_id not in allowed_telegram_ids:
             await callback.answer("Only the author or group creator can delete this question.", show_alert=True)
             return
+        # --- Вычитание баллов у автора ---
+        member = await session.execute(select(GroupMember).where(GroupMember.user_id == question.author_id, GroupMember.group_id == question.group_id))
+        member = member.scalar()
+        if member:
+            old_balance = member.balance
+            member.balance = max(0, member.balance - POINTS_FOR_NEW_QUESTION)
+            logging.info(f"[cb_delete_question] Author {question.author_id} balance changed: {old_balance} -> {member.balance} (question deleted)")
         question.is_deleted = 1
         await session.execute(Answer.__table__.delete().where(Answer.question_id == qid))
         await session.commit()
@@ -140,7 +151,7 @@ async def cb_delete_question(callback: types.CallbackQuery, state: FSMContext):
             await callback.message.delete()
         except Exception as e:
             logging.error(f"[cb_delete_question] Failed to delete message: {e}")
-        await callback.answer("Question deleted.")
+        await callback.answer(f"Question deleted. {f'-{POINTS_FOR_NEW_QUESTION}💎 from author' if member else ''}")
 
 ANSWERED_PAGE_SIZE = 10
 
