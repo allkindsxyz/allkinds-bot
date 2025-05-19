@@ -66,32 +66,32 @@ async def start(message: types.Message, state: FSMContext):
         args = message.text.split()
         if len(args) == 2 and len(args[1]) == 5:
             code = args[1].upper()
-            group = await join_group_by_code(user_id, code)
+            group = await join_group_by_code_service(user_id, code)
             if not group:
                 await message.answer("❌ Group not found. Check the invite code.")
                 return
-            onboarded = await is_onboarded(user_id, group["id"])
-            if onboarded:
-                balance = await get_group_balance(user_id, group["id"])
-                await message.answer(f"Welcome back to {group['name']}. Your balance is {balance}💎 points.",
-                    reply_markup=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="Load answered questions", callback_data="load_answered_questions")]]))
-                await message.answer("You can find your best match at any time:", reply_markup=get_group_reply_keyboard())
-                async with AsyncSessionLocal() as session:
-                    user = await session.execute(select(User).where(User.telegram_user_id == user_id))
-                    user = user.scalar()
-                    if user is None:
-                        print(f"[INFO] Creating new user in DB for telegram_user_id={user_id} in /start handler")
-                        user = User(telegram_user_id=user_id)
-                        session.add(user)
-                        await session.commit()
-                        await session.refresh(user)
-                    next_q = await get_next_unanswered_question(session, group["id"], user.id)
-                    if next_q:
-                        await send_question_to_user(bot, user, next_q)
+            if group.get("needs_onboarding"):
+                await message.answer(f"Joining '{group['name']}'. Let's set up your profile!\nEnter your nickname:", reply_markup=types.ReplyKeyboardRemove())
+                await state.update_data(group_id=group["id"])
+                from src.fsm.states import Onboarding
+                await state.set_state(Onboarding.nickname)
                 return
-            await message.answer(f"Joining '{group['name']}'. Let's set up your profile!\nEnter your nickname:", reply_markup=ReplyKeyboardRemove())
-            await state.update_data(group_id=group["id"])
-            await state.set_state(Onboarding.nickname)
+            balance = await get_group_balance(user_id, group["id"])
+            await message.answer(f"Welcome back to {group['name']}. Your balance is {balance}💎 points.",
+                reply_markup=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="Load answered questions", callback_data="load_answered_questions")]]))
+            await message.answer("You can find your best match at any time:", reply_markup=get_group_reply_keyboard())
+            async with AsyncSessionLocal() as session:
+                user = await session.execute(select(User).where(User.telegram_user_id == user_id))
+                user = user.scalar()
+                if user is None:
+                    print(f"[INFO] Creating new user in DB for telegram_user_id={user_id} in /start handler")
+                    user = User(telegram_user_id=user_id)
+                    session.add(user)
+                    await session.commit()
+                    await session.refresh(user)
+                next_q = await get_next_unanswered_question(session, group["id"], user.id)
+                if next_q:
+                    await send_question_to_user(bot, user, next_q)
             return
         groups = await get_user_groups(user_id)
         is_creator = await is_group_creator(user_id)
@@ -121,47 +121,33 @@ async def start(message: types.Message, state: FSMContext):
         if len(groups) == 1:
             group = groups[0]
             onboarded = await is_onboarded(user_id, group["id"])
-            if onboarded:
-                balance = await get_group_balance(user_id, group["id"])
-                await message.answer(f"Welcome back to {group['name']}. Your balance is {balance}💎 points.",
-                    reply_markup=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="Load answered questions", callback_data="load_answered_questions")]]))
-                await message.answer("You can find your best match at any time:", reply_markup=get_group_reply_keyboard())
-                async with AsyncSessionLocal() as session:
-                    user = await session.execute(select(User).where(User.telegram_user_id == user_id))
-                    user = user.scalar()
-                    if user is None:
-                        print(f"[INFO] Creating new user in DB for telegram_user_id={user_id} in /start handler (multi-group)")
-                        user = User(telegram_user_id=user_id)
-                        session.add(user)
-                        await session.commit()
-                        await session.refresh(user)
-                    next_q = await get_next_unanswered_question(session, group["id"], user.id)
-                    if next_q:
-                        await send_question_to_user(bot, user, next_q)
+            if not onboarded:
+                await message.answer(f"Let's set up your profile for '{group['name']}'!\nEnter your nickname:", reply_markup=types.ReplyKeyboardRemove())
+                await state.update_data(group_id=group["id"])
+                from src.fsm.states import Onboarding
+                await state.set_state(Onboarding.nickname)
                 return
-            await message.answer(f"You have one group. Redirecting to onboarding for '{group['name']}'...", reply_markup=ReplyKeyboardRemove())
-            await state.update_data(group_id=group["id"])
-            await state.set_state(Onboarding.nickname)
-            await message.answer("Enter your nickname:")
+            balance = await get_group_balance(user_id, group["id"])
+            await message.answer(f"Welcome back to {group['name']}. Your balance is {balance}💎 points.",
+                reply_markup=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="Load answered questions", callback_data="load_answered_questions")]]))
+            await message.answer("You can find your best match at any time:", reply_markup=get_group_reply_keyboard())
+            async with AsyncSessionLocal() as session:
+                user = await session.execute(select(User).where(User.telegram_user_id == user_id))
+                user = user.scalar()
+                if user is None:
+                    print(f"[INFO] Creating new user in DB for telegram_user_id={user_id} in /start handler (multi-group)")
+                    user = User(telegram_user_id=user_id)
+                    session.add(user)
+                    await session.commit()
+                    await session.refresh(user)
+                next_q = await get_next_unanswered_question(session, group["id"], user.id)
+                if next_q:
+                    await send_question_to_user(bot, user, next_q)
             return
         kb = InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text=f"Switch to {g['name']}", callback_data=f"switch_to_group_{g['id']}")] for g in groups
         ])
         await message.answer("Select a group:", reply_markup=kb)
-        async with AsyncSessionLocal() as session:
-            user = await session.execute(select(User).where(User.telegram_user_id == user_id))
-            user = user.scalar()
-            if user is None:
-                print(f"[INFO] Creating new user in DB for telegram_user_id={user_id} in /start handler (multi-group)")
-                user = User(telegram_user_id=user_id)
-                session.add(user)
-                await session.commit()
-                await session.refresh(user)
-            group_id = user.current_group_id or (groups[0]["id"] if groups else None)
-            if group_id:
-                next_q = await get_next_unanswered_question(session, group_id, user.id)
-                if next_q:
-                    await send_question_to_user(bot, user, next_q)
     except Exception as e:
         logging.exception("Ошибка в хендлере /start")
         raise 

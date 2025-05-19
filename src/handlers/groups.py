@@ -529,4 +529,20 @@ async def cb_match_chat(callback: types.CallbackQuery, state: FSMContext):
         pass
     await callback.answer()
 
+async def switch_group_service(user_id: int, group_id: int) -> dict:
+    """Сменить текущую группу пользователя. Вернуть статус и данные группы."""
+    async with AsyncSessionLocal() as session:
+        user = await session.execute(select(User).where(User.telegram_user_id == user_id))
+        user = user.scalar()
+        member = await session.execute(select(GroupMember).where(GroupMember.user_id == user.id, GroupMember.group_id == group_id))
+        member = member.scalar()
+        onboarded = member and member.nickname and (member.geolocation_lat or member.city) and member.photo_url
+        if not onboarded:
+            return {"ok": False, "reason": "not_onboarded", "group": {"id": group_id}}
+        user.current_group_id = group_id
+        await session.commit()
+        group = await session.execute(select(Group).where(Group.id == group_id))
+        group = group.scalar()
+        return {"ok": True, "group": {"id": group.id, "name": group.name}}
+
 # TODO: Перенести сюда все group-related хендлеры (create, join, switch, delete, leave, confirm/cancel) 
