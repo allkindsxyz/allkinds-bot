@@ -11,7 +11,7 @@ from src.services.onboarding import is_onboarding_complete_service
 from src.db import AsyncSessionLocal
 from sqlalchemy import select
 from src.models import User, GroupMember
-from src.keyboards.groups import get_user_keyboard, get_admin_keyboard
+from src.keyboards.groups import get_user_keyboard, get_admin_keyboard, get_group_reply_keyboard
 
 router = Router()
 print('System router loaded')
@@ -75,6 +75,7 @@ async def start(message: types.Message, state: FSMContext):
                 balance = await get_group_balance(user_id, group["id"])
                 await message.answer(f"Welcome back to {group['name']}. Your balance is {balance}💎 points.",
                     reply_markup=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="Load answered questions", callback_data="load_answered_questions")]]))
+                await message.answer("You can find your best match at any time:", reply_markup=get_group_reply_keyboard())
                 async with AsyncSessionLocal() as session:
                     user = await session.execute(select(User).where(User.telegram_user_id == user_id))
                     user = user.scalar()
@@ -124,6 +125,7 @@ async def start(message: types.Message, state: FSMContext):
                 balance = await get_group_balance(user_id, group["id"])
                 await message.answer(f"Welcome back to {group['name']}. Your balance is {balance}💎 points.",
                     reply_markup=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="Load answered questions", callback_data="load_answered_questions")]]))
+                await message.answer("You can find your best match at any time:", reply_markup=get_group_reply_keyboard())
                 async with AsyncSessionLocal() as session:
                     user = await session.execute(select(User).where(User.telegram_user_id == user_id))
                     user = user.scalar()

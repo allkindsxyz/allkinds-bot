@@ -328,6 +328,8 @@ async def process_invite_code(message: types.Message, state: FSMContext):
         await message.answer("Group not found. Check the code and try again.")
         return
     await message.answer(f"You joined group '{group['name']}'! 🎉\nYou received a welcome bonus: +{WELCOME_BONUS}💎 points.", reply_markup=go_to_group_keyboard(group["id"], group["name"]))
+    # Добавляем кнопку Who is vibing
+    await message.answer("You can find your best match at any time:", reply_markup=get_group_reply_keyboard())
     await state.clear()
 
 @router.callback_query(F.data.startswith("find_match_"))
