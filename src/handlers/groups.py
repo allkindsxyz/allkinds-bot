@@ -327,6 +327,12 @@ async def process_invite_code(message: types.Message, state: FSMContext):
     if not group:
         await message.answer("Group not found. Check the code and try again.")
         return
+    if group.get("needs_onboarding"):
+        await message.answer(f"Joining '{group['name']}'. Let's set up your profile!\nEnter your nickname:", reply_markup=types.ReplyKeyboardRemove())
+        await state.update_data(group_id=group["id"])
+        from src.fsm.states import Onboarding
+        await state.set_state(Onboarding.nickname)
+        return
     await message.answer(f"You joined group '{group['name']}'! 🎉\nYou received a welcome bonus: +{WELCOME_BONUS}💎 points.", reply_markup=go_to_group_keyboard(group["id"], group["name"]))
     # Добавляем кнопку Who is vibing
     await message.answer("You can find your best match at any time:", reply_markup=get_group_reply_keyboard())

@@ -202,7 +202,11 @@ async def join_group_by_code_service(user_id: int, code: str) -> dict | None:
             session.add(member)
             user.current_group_id = group.id
             await session.commit()
-        return {"id": group.id, "name": group.name}
+            # Проверяем статус онбординга
+            onboarded = await is_onboarded(user_id, group.id)
+            if not onboarded:
+                return {"id": group.id, "name": group.name, "needs_onboarding": True}
+        return {"id": group.id, "name": group.name, "needs_onboarding": False}
 
 async def switch_group_service(user_id: int, group_id: int) -> dict:
     """Сменить текущую группу пользователя. Вернуть статус и данные группы."""
