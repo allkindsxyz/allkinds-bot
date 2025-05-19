@@ -6,6 +6,7 @@ from aiogram.webhook.aiohttp_server import SimpleRequestHandler, setup_applicati
 from src.loader import bot, dp
 from src.routers import all_routers
 from src.services.groups import ensure_admin_in_db
+from aiogram import types
 
 # Регистрация всех роутеров
 for router in all_routers:
@@ -18,6 +19,14 @@ PORT = int(os.getenv("PORT", 8000))
 async def on_startup(app):
     print(f"[INFO] Setting webhook: {WEBHOOK_URL}")
     await bot.set_webhook(WEBHOOK_URL)
+    
+    # Регистрация команд бота
+    commands = [
+        types.BotCommand(command="start", description="Start the bot"),
+        types.BotCommand(command="instructions", description="Show instructions"),
+        types.BotCommand(command="mygroups", description="Show your groups")
+    ]
+    await bot.set_my_commands(commands)
 
 async def on_shutdown(app):
     print("[INFO] Shutting down webhook")
@@ -37,6 +46,15 @@ def create_app():
 async def main():
     logging.basicConfig(level=logging.INFO)
     await ensure_admin_in_db()
+    
+    # Регистрация команд бота
+    commands = [
+        types.BotCommand(command="start", description="Start the bot"),
+        types.BotCommand(command="instructions", description="Show instructions"),
+        types.BotCommand(command="mygroups", description="Show your groups")
+    ]
+    await bot.set_my_commands(commands)
+    
     if WEBHOOK_URL:
         print(f"[INFO] Starting bot in WEBHOOK mode: {WEBHOOK_URL}")
         app = create_app()
