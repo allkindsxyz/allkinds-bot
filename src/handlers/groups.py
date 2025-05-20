@@ -2,7 +2,7 @@ import os
 import logging
 from src.db import AsyncSessionLocal
 from sqlalchemy import select, and_, text
-from src.models import Group, GroupMember, User, Answer, Question
+from src.models import Group, GroupMember, User, Answer, Question, MatchStatus, Match
 # Хендлеры для управления группами
 # Импорты и вызовы сервисов будут добавлены после выноса бизнес-логики 
 
@@ -487,6 +487,7 @@ async def handle_vibing_button(message: types.Message, state: FSMContext):
 async def cb_match_chat(callback: types.CallbackQuery, state: FSMContext):
     user_id = callback.from_user.id
     match_user_id = int(callback.data.split("_")[-1])
+    from src.models import MatchStatus
     # Проверяем баланс
     async with AsyncSessionLocal() as session:
         user = await session.execute(select(User).where(User.telegram_user_id == user_id))
@@ -500,6 +501,51 @@ async def cb_match_chat(callback: types.CallbackQuery, state: FSMContext):
             return
         # Списываем баллы
         member.balance -= POINTS_TO_CONNECT
+        # --- СОЗДАЁМ ЗАПИСЬ О МЭТЧЕ ДЛЯ ОБОИХ ПОЛЬЗОВАТЕЛЕЙ ---
+        # Получаем внутренние user.id для обоих
+        match_user = await session.execute(select(User).where(User.telegram_user_id == match_user_id))
+        match_user = match_user.scalar()
+        if not match_user:
+            await callback.message.answer("Match user not found.")
+            await callback.answer()
+            return
+        # Создаём/обновляем статус мэтча для инициатора
+        obj1 = await session.execute(select(MatchStatus).where(
+            MatchStatus.user_id == user.id,
+            MatchStatus.group_id == group_id,
+            MatchStatus.match_user_id == match_user.id
+        ))
+        obj1 = obj1.scalar()
+        if not obj1:
+            obj1 = MatchStatus(user_id=user.id, group_id=group_id, match_user_id=match_user.id, status="matched")
+            session.add(obj1)
+        else:
+            obj1.status = "matched"
+        # Создаём/обновляем статус мэтча для второго пользователя
+        obj2 = await session.execute(select(MatchStatus).where(
+            MatchStatus.user_id == match_user.id,
+            MatchStatus.group_id == group_id,
+            MatchStatus.match_user_id == user.id
+        ))
+        obj2 = obj2.scalar()
+        if not obj2:
+            obj2 = MatchStatus(user_id=match_user.id, group_id=group_id, match_user_id=user.id, status="matched")
+            session.add(obj2)
+        else:
+            obj2.status = "matched"
+        # --- СОЗДАЁМ ЗАПИСЬ В matches ---
+        user1_id = min(user.id, match_user.id)
+        user2_id = max(user.id, match_user.id)
+        match_obj = await session.execute(select(Match).where(
+            Match.user1_id == user1_id,
+            Match.user2_id == user2_id,
+            Match.group_id == group_id
+        ))
+        match_obj = match_obj.scalar()
+        if not match_obj:
+            from datetime import datetime, UTC
+            match_obj = Match(user1_id=user1_id, user2_id=user2_id, group_id=group_id, created_at=datetime.now(UTC), status="active")
+            session.add(match_obj)
         await session.commit()
     # Удаляем сообщения мэтча (фото/текст)
     try:
@@ -515,13 +561,28 @@ async def cb_match_chat(callback: types.CallbackQuery, state: FSMContext):
         except Exception:
             pass
         await state.update_data(vibing_msg_id=None)
-    # Показываем url-кнопку для перехода в чат-бот
+    # Показываем url-кнопку для перехода в чат-бот инициатору
     param = quote(f"match_{user_id}_{match_user_id}")
     link = f"https://t.me/{ALLKINDS_CHAT_BOT_USERNAME}?start={param}"
     kb = types.InlineKeyboardMarkup(inline_keyboard=[
         [types.InlineKeyboardButton(text="Go to Allkinds Chat Bot", url=link)]
     ])
     notif = await callback.message.answer("Click the button below to start your private chat:", reply_markup=kb)
+    # --- УВЕДОМЛЯЕМ ВТОРОГО ПОЛЬЗОВАТЕЛЯ ---
+    # Получаем telegram_user_id второго пользователя
+    async with AsyncSessionLocal() as session:
+        match_user = await session.execute(select(User).where(User.telegram_user_id == match_user_id))
+        match_user = match_user.scalar()
+        if match_user:
+            param2 = quote(f"match_{match_user_id}_{user_id}")
+            link2 = f"https://t.me/{ALLKINDS_CHAT_BOT_USERNAME}?start={param2}"
+            kb2 = types.InlineKeyboardMarkup(inline_keyboard=[
+                [types.InlineKeyboardButton(text="Go to Allkinds Chat Bot", url=link2)]
+            ])
+            try:
+                await callback.bot.send_message(match_user.telegram_user_id, "You have a new match! Click below to start your private chat:", reply_markup=kb2)
+            except Exception:
+                pass
     await asyncio.sleep(5)
     try:
         await notif.delete()

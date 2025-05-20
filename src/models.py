@@ -88,3 +88,13 @@ class MatchStatus(Base):
     status = Column(String(16), nullable=False)  # 'hidden' | 'postponed'
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
     __table_args__ = (UniqueConstraint('user_id', 'group_id', 'match_user_id', name='_match_uc'),) 
+
+class Match(Base):
+    __tablename__ = 'matches'
+    id = Column(Integer, primary_key=True)
+    user1_id = Column(Integer, ForeignKey('users.id', ondelete='CASCADE'), nullable=False)
+    user2_id = Column(Integer, ForeignKey('users.id', ondelete='CASCADE'), nullable=False)
+    group_id = Column(Integer, ForeignKey('groups.id', ondelete='CASCADE'), nullable=False)
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
+    status = Column(String(16), default='active')  # active/closed
+    __table_args__ = (UniqueConstraint('user1_id', 'user2_id', 'group_id', name='_match_pair_uc'),) 
