@@ -379,9 +379,9 @@ async def cb_find_match(callback: types.CallbackQuery, state: FSMContext):
         # Показываем UX мэтча
         text = f"<b>{match['nickname']}</b>\nCohesion: <b>{match['similarity']}%</b> ({match['common_questions']} questions, matched from {match['valid_users_count']} users)"
         kb = types.InlineKeyboardMarkup(inline_keyboard=[
-            [types.InlineKeyboardButton(text=f"AI Chemistry Insights and Chat ({POINTS_TO_CONNECT}💎)", callback_data=f"match_chat_{match['user_id']}")],
-            [types.InlineKeyboardButton(text="Show again", callback_data=f"match_postpone_{match['user_id']}")],
-            [types.InlineKeyboardButton(text="Don't show again", callback_data=f"match_hide_{match['user_id']}")]
+            [types.InlineKeyboardButton(text=f"AI Chemistry Insights and Chat ({POINTS_TO_CONNECT}💎)", callback_data=f"match_chat_{match['telegram_user_id']}")],
+            [types.InlineKeyboardButton(text="Show again", callback_data=f"match_postpone_{match['telegram_user_id']}")],
+            [types.InlineKeyboardButton(text="Don't show again", callback_data=f"match_hide_{match['telegram_user_id']}")]
         ])
         if match['photo_url']:
             await callback.message.answer_photo(match['photo_url'], caption=text, reply_markup=kb, parse_mode="HTML")
