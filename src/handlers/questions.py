@@ -15,7 +15,6 @@ from src.constants import POINTS_FOR_NEW_QUESTION, POINTS_FOR_ANSWER
 from src.db import AsyncSessionLocal
 from sqlalchemy import select, and_
 from src.models import User, GroupMember, Question, Answer, Group
-import asyncio
 
 router = Router()
 
@@ -24,6 +23,7 @@ router = Router()
 @router.message(F.text & ~F.text.startswith('/'))
 async def handle_new_question(message: types.Message, state: FSMContext):
     """Создание нового вопроса: сохраняем вопрос, начисляем баллы автору."""
+    import asyncio
     text = message.text.strip()
     if len(text) < 5:
         await message.answer("Question too short. Please enter a more detailed question.")
@@ -54,13 +54,31 @@ async def handle_new_question(message: types.Message, state: FSMContext):
         if member:
             member.balance += POINTS_FOR_NEW_QUESTION
         await session.commit()
-        success_message = await message.answer(f"✅ Question added! You received +{POINTS_FOR_NEW_QUESTION}💎 points.")
-        # Удаляем сообщение через 5 секунд
-        await asyncio.sleep(5)
-        await success_message.delete()
+        # Удаляем исходное сообщение пользователя (вопрос без кнопок)
+        try:
+            await message.delete()
+        except Exception:
+            pass
+        # Отправляем сообщение о добавлении вопроса и удаляем его через 1 секунду
+        info_msg = await message.answer(f"✅ Question added! You received +{POINTS_FOR_NEW_QUESTION}💎 points.")
+        await asyncio.sleep(1)
+        try:
+            await info_msg.delete()
+        except Exception:
+            pass
         # Сразу показываем вопрос автору с кнопками ответов
         from src.handlers.questions import send_question_to_user
         await send_question_to_user(message.bot, user, q)
+        # Пуш-уведомления всем участникам группы (кроме автора)
+        group_members = await session.execute(select(GroupMember, User).join(User).where(GroupMember.group_id == user.current_group_id))
+        group_members = group_members.all()
+        for gm, u in group_members:
+            if u.id == user.id:
+                continue  # не отправляем автору
+            try:
+                await send_question_to_user(message.bot, u, q)
+            except Exception:
+                pass
 
 @router.callback_query(F.data.startswith("answer_"))
 async def cb_answer_question(callback: types.CallbackQuery, state: FSMContext):
@@ -137,13 +155,6 @@ async def cb_delete_question(callback: types.CallbackQuery, state: FSMContext):
         if user_id not in allowed_telegram_ids:
             await callback.answer("Only the author or group creator can delete this question.", show_alert=True)
             return
-        # --- Вычитание баллов у автора ---
-        member = await session.execute(select(GroupMember).where(GroupMember.user_id == question.author_id, GroupMember.group_id == question.group_id))
-        member = member.scalar()
-        if member:
-            old_balance = member.balance
-            member.balance = max(0, member.balance - POINTS_FOR_NEW_QUESTION)
-            logging.info(f"[cb_delete_question] Author {question.author_id} balance changed: {old_balance} -> {member.balance} (question deleted)")
         question.is_deleted = 1
         await session.execute(Answer.__table__.delete().where(Answer.question_id == qid))
         await session.commit()
@@ -151,7 +162,7 @@ async def cb_delete_question(callback: types.CallbackQuery, state: FSMContext):
             await callback.message.delete()
         except Exception as e:
             logging.error(f"[cb_delete_question] Failed to delete message: {e}")
-        await callback.answer(f"Question deleted. {f'-{POINTS_FOR_NEW_QUESTION}💎 from author' if member else ''}")
+        await callback.answer("Question deleted.")
 
 ANSWERED_PAGE_SIZE = 10
 
