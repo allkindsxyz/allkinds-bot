@@ -20,7 +20,8 @@ depends_on: Union[str, Sequence[str], None] = None
 
 def upgrade() -> None:
     """Upgrade schema."""
-    # Безопасно: если таблицы нет, просто создаём
+    # Дропаем старую таблицу matches, если есть
+    op.drop_table('matches')
     op.create_table(
         'matches',
         sa.Column('id', sa.Integer(), primary_key=True),
