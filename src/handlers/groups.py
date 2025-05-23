@@ -604,6 +604,9 @@ async def cb_match_chat(callback: types.CallbackQuery, state: FSMContext):
             await callback.message.answer(get_message("Match user not found.", user=user))
             await callback.answer()
             return
+        # --- ВАЖНО: для диплинка используем именно telegram_user_id, а не внутренние id ---
+        initiator_telegram_user_id = user.telegram_user_id
+        match_telegram_user_id = match_user.telegram_user_id
         obj1 = await session.execute(select(MatchStatus).where(
             MatchStatus.user_id == user.id,
             MatchStatus.group_id == group_id,
@@ -651,7 +654,8 @@ async def cb_match_chat(callback: types.CallbackQuery, state: FSMContext):
         except Exception:
             pass
         await state.update_data(vibing_msg_id=None)
-    param = quote(f"match_{user_id}_{match_user_id}")
+    # Формируем диплинк с telegram_user_id обоих пользователей
+    param = quote(f"match_{initiator_telegram_user_id}_{match_telegram_user_id}")
     link = f"https://t.me/{ALLKINDS_CHAT_BOT_USERNAME}?start={param}"
     kb = types.InlineKeyboardMarkup(inline_keyboard=[
         [types.InlineKeyboardButton(text=get_message("Go to Allkinds Chat Bot", user=user), url=link)]
@@ -661,7 +665,8 @@ async def cb_match_chat(callback: types.CallbackQuery, state: FSMContext):
         match_user = await session.execute(select(User).where(User.id == match_user_id))
         match_user = match_user.scalar()
         if match_user:
-            param2 = quote(f"match_{match_user_id}_{user_id}")
+            # Для второго пользователя также используем telegram_user_id
+            param2 = quote(f"match_{match_telegram_user_id}_{initiator_telegram_user_id}")
             link2 = f"https://t.me/{ALLKINDS_CHAT_BOT_USERNAME}?start={param2}"
             kb2 = types.InlineKeyboardMarkup(inline_keyboard=[
                 [types.InlineKeyboardButton(text=get_message("Go to Allkinds Chat Bot", user=match_user), url=link2)]
