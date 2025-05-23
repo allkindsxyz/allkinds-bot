@@ -127,12 +127,7 @@ async def cb_answer_question(callback: types.CallbackQuery, state: FSMContext):
         creator_user_id = group_obj.creator_user_id if group_obj else None
         ans = await session.execute(select(Answer).where(and_(Answer.question_id == qid, Answer.user_id == user.id)))
         ans = ans.scalar()
-        if ans and ans.value == value:
-            # Клик по уже выбранному значению — показать все кнопки
-            await show_question_with_all_buttons(callback, question, user, creator_user_id)
-            await callback.answer(get_message(QUESTION_CAN_CHANGE_ANSWER, user=user))
-            return
-        # Новый ответ или смена ответа
+        # Любой клик по кнопке (даже если выбран тот же вариант) — всегда записываем ответ и скрываем остальные кнопки
         if not ans:
             ans = Answer(question_id=qid, user_id=user.id, status='answered', value=value)
             session.add(ans)
@@ -144,7 +139,6 @@ async def cb_answer_question(callback: types.CallbackQuery, state: FSMContext):
         if member:
             member.balance += POINTS_FOR_ANSWER
         await session.commit()
-        # Показываем только выбранную кнопку (и Delete)
         await show_question_with_selected_button(callback, question, user, value, creator_user_id)
         await callback.answer(get_message(QUESTION_ANSWER_SAVED, user=user))
         # --- Следующий вопрос из очереди ---
