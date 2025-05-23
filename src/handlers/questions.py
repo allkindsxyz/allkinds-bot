@@ -361,8 +361,8 @@ async def show_question_with_all_buttons(callback, question, user, creator_user_
     kb = types.InlineKeyboardMarkup(inline_keyboard=keyboard)
     try:
         await callback.message.edit_reply_markup(reply_markup=kb)
-    except Exception:
-        pass
+    except Exception as e:
+        logging.error(f"[show_question_with_all_buttons] Failed to edit reply markup: {e}")
 
 async def send_question_to_user(bot, user, question, creator_user_id=None, group_id=None, all_groups_count=None, group_name=None):
     if creator_user_id is None or group_id is None or group_name is None or all_groups_count is None:
