@@ -341,6 +341,10 @@ async def show_question_with_selected_button(callback, question, user, value, cr
     if is_author or is_creator:
         row.append(types.InlineKeyboardButton(text="Delete", callback_data=f"delete_question_{question.id}"))
     kb = types.InlineKeyboardMarkup(inline_keyboard=[row])
+    # Сравниваем текущую клавиатуру с новой
+    current = callback.message.reply_markup
+    if current and current.inline_keyboard == kb.inline_keyboard:
+        return
     try:
         await callback.message.edit_reply_markup(reply_markup=kb)
     except Exception as e:
@@ -359,6 +363,10 @@ async def show_question_with_all_buttons(callback, question, user, creator_user_
     if is_author or is_creator:
         keyboard.append([types.InlineKeyboardButton(text="Delete", callback_data=f"delete_question_{question.id}")])
     kb = types.InlineKeyboardMarkup(inline_keyboard=keyboard)
+    # Сравниваем текущую клавиатуру с новой
+    current = callback.message.reply_markup
+    if current and current.inline_keyboard == kb.inline_keyboard:
+        return
     try:
         await callback.message.edit_reply_markup(reply_markup=kb)
     except Exception as e:
