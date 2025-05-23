@@ -19,6 +19,16 @@ from src.constants import WELCOME_BONUS, MIN_ANSWERS_FOR_MATCH, POINTS_FOR_MATCH
 import asyncio
 from src.config import ALLKINDS_CHAT_BOT_USERNAME
 from urllib.parse import quote
+from src.texts.messages import (
+    get_message,
+    GROUPS_NOT_IN_ANY, GROUPS_LEAVE_CONFIRM, GROUPS_DELETE_CONFIRM, GROUPS_NAME_EMPTY, GROUPS_DESC_EMPTY, GROUPS_CREATED,
+    GROUPS_JOIN_INVALID_CODE, GROUPS_JOIN_NOT_FOUND, GROUPS_JOIN_ONBOARDING, GROUPS_JOINED, GROUPS_NO_NEW_QUESTIONS,
+    GROUPS_PROFILE_SETUP, GROUPS_REVIEW_ANSWERED, GROUPS_FIND_MATCH, GROUPS_SELECT, GROUPS_WELCOME_ADMIN, GROUPS_WELCOME,
+    GROUPS_SWITCH_TO, GROUPS_INVITE_LINK, BTN_CREATE_GROUP, BTN_JOIN_GROUP, BTN_SWITCH_TO, BTN_DELETE_GROUP, BTN_LEAVE_GROUP,
+    BTN_DELETE, BTN_CANCEL, BTN_WHO_IS_VIBING,
+    MATCH_FOUND, MATCH_NO_VALID, MATCH_AI_CHEMISTRY, MATCH_SHOW_AGAIN, MATCH_DONT_SHOW,
+    QUESTION_LOAD_ANSWERED, NO_AVAILABLE_ANSWERED_QUESTIONS
+)
 
 router = Router()
 
@@ -92,18 +102,17 @@ async def show_user_groups(message: types.Message, state: FSMContext) -> None:
     """
     user_id = message.from_user.id
     groups = await get_user_groups(user_id)
-    if not groups:
-        is_creator = await is_group_creator(user_id)
-        if is_creator:
-            kb = get_admin_keyboard([])
-        else:
-            kb = get_user_keyboard()
-        await message.answer("You are not in any groups.", reply_markup=kb)
-        return
-    # Получаем текущую группу пользователя
     async with AsyncSessionLocal() as session:
         user = await session.execute(select(User).where(User.telegram_user_id == user_id))
         user = user.scalar()
+        if not groups:
+            is_creator = await is_group_creator(user_id)
+            if is_creator:
+                kb = get_admin_keyboard([], user)
+            else:
+                kb = get_user_keyboard(user)
+            await message.answer(get_message(GROUPS_NOT_IN_ANY, user=user), reply_markup=kb)
+            return
         current_group_id = user.current_group_id
         current_group = None
         for g in groups:
@@ -114,30 +123,56 @@ async def show_user_groups(message: types.Message, state: FSMContext) -> None:
             current_group = groups[0]
             user.current_group_id = current_group["id"]
             await session.commit()
-        # Получаем данные о группе
+            await message.answer("⚠️ Your current group was not found. Switched to: {}".format(current_group["name"]))
         group = await session.execute(select(Group).where(Group.id == current_group["id"]))
         group = group.scalar()
     bot_info = await message.bot.get_me()
     deeplink = f"https://t.me/{bot_info.username}?start={group.invite_code}"
-    text = f"You are in <b>{group.name}</b>\n{group.description}\n\nInvite link: {deeplink}\nInvite code: <code>{group.invite_code}</code>"
+    text = get_message(GROUPS_INVITE_LINK, user=user, group_name=group.name, group_desc=group.description, deeplink=deeplink, invite_code=group.invite_code)
     is_creator = (group.creator_user_id == user.id)
-    kb = get_group_main_keyboard(user.id, group.id, group.name, is_creator)
+    kb = get_group_main_keyboard(user.id, group.id, group.name, is_creator, user)
     kb.inline_keyboard.append([])
     other_groups = [g for g in groups if g["id"] != group.id]
     for g in other_groups:
         kb.inline_keyboard.append([
-            types.InlineKeyboardButton(text=f"Switch to {g['name']}", callback_data=f"switch_to_group_{g['id']}")
+            types.InlineKeyboardButton(text=get_message(BTN_SWITCH_TO, user=user, group_name=g['name']), callback_data=f"switch_to_group_{g['id']}")
         ])
     if await is_group_creator(user_id):
         kb.inline_keyboard.append([
-            types.InlineKeyboardButton(text="Create a new group", callback_data="create_new_group")
+            types.InlineKeyboardButton(text=get_message(BTN_CREATE_GROUP, user=user), callback_data="create_new_group")
         ])
     kb.inline_keyboard.append([
-        types.InlineKeyboardButton(text="Join another group with code", callback_data="join_another_group_with_code")
+        types.InlineKeyboardButton(text=get_message(BTN_JOIN_GROUP, user=user), callback_data="join_another_group_with_code")
     ])
     sent = await message.answer(text, reply_markup=kb, parse_mode="HTML")
-    # Показываем обычную клавиатуру с кнопкой мэтча
-    await message.answer("You can find your best match at any time:", reply_markup=get_group_reply_keyboard())
+    # --- Новая логика для кнопки истории ---
+    async with AsyncSessionLocal() as session:
+        any_answers = await session.execute(
+            select(Answer).where(
+                Answer.user_id == user.id,
+                Answer.question_id.in_(select(Question.id).where(Question.group_id == group.id))
+            )
+        )
+        any_answers = any_answers.scalars().all()
+        valid_answers = await session.execute(
+            select(Answer).where(
+                Answer.user_id == user.id,
+                Answer.value.isnot(None),
+                Answer.question_id.in_(select(Question.id).where(Question.group_id == group.id, Question.is_deleted == 0))
+            )
+        )
+        valid_answers = valid_answers.scalars().all()
+        print(f"[DEBUG] any_answers: {len(any_answers)}, valid_answers: {len(valid_answers)} for user_id={user.id}, group_id={group.id}")
+        print(f"[DEBUG] any_answers content: {any_answers}")
+        print(f"[DEBUG] valid_answers content: {valid_answers}")
+        if len(any_answers) > 0:
+            kb_hist = types.InlineKeyboardMarkup(inline_keyboard=[[types.InlineKeyboardButton(text=get_message(QUESTION_LOAD_ANSWERED, user=user), callback_data="load_answered_questions")]])
+            if valid_answers:
+                msg = await message.answer(get_message(GROUPS_REVIEW_ANSWERED, user=user), reply_markup=kb_hist)
+                print(f"[DEBUG] Sent answered questions msg_id={msg.message_id}")
+            else:
+                msg = await message.answer(get_message(NO_AVAILABLE_ANSWERED_QUESTIONS, user=user), reply_markup=kb_hist)
+                print(f"[DEBUG] Sent no available answered questions msg_id={msg.message_id}")
     data = await state.get_data()
     ids = data.get("my_groups_msg_ids", [])
     ids.append(sent.message_id)
@@ -157,13 +192,15 @@ async def clear_mygroups_messages(message, state):
 async def cb_confirm_leave_group(callback: types.CallbackQuery, state: FSMContext):
     await clear_mygroups_messages(callback.message, state)
     group_id = int(callback.data.split("_")[-1])
-    # Получаем только данные для UI
     user_id = callback.from_user.id
+    async with AsyncSessionLocal() as session:
+        user = await session.execute(select(User).where(User.telegram_user_id == user_id))
+        user = user.scalar()
     groups = await get_user_groups(user_id)
     group = next((g for g in groups if g["id"] == group_id), None)
     group_name = group["name"] if group else "this group"
-    text = f"Are you sure you want to leave <b>{group_name}</b>?\nAll your answers in this group will be deleted."
-    kb = get_confirm_delete_keyboard(group_id)
+    text = get_message(GROUPS_LEAVE_CONFIRM, user=user, group_name=group_name)
+    kb = get_confirm_delete_keyboard(group_id, user)
     msg = await callback.message.answer(text, reply_markup=kb, parse_mode="HTML")
     data = await state.get_data()
     leave_ids = data.get("leave_msgs", [])
@@ -181,13 +218,16 @@ async def cb_leave_group_cancel(callback: types.CallbackQuery, state: FSMContext
 async def cb_confirm_delete_group(callback: types.CallbackQuery, state: FSMContext):
     await clear_mygroups_messages(callback.message, state)
     group_id = int(callback.data.split("_")[-1])
-    from src.services.groups import get_user_groups
     user_id = callback.from_user.id
+    async with AsyncSessionLocal() as session:
+        user = await session.execute(select(User).where(User.telegram_user_id == user_id))
+        user = user.scalar()
+    from src.services.groups import get_user_groups
     groups = await get_user_groups(user_id)
     group = next((g for g in groups if g["id"] == group_id), None)
     group_name = group["name"] if group else "this group"
-    text = f"Are you sure you want to delete <b>{group_name}</b>?\nAll questions and users will be deleted from this group. This action cannot be undone."
-    kb = get_confirm_delete_keyboard(group_id)
+    text = get_message(GROUPS_DELETE_CONFIRM, user=user, group_name=group_name)
+    kb = get_confirm_delete_keyboard(group_id, user)
     msg = await callback.message.answer(text, reply_markup=kb, parse_mode="HTML")
     data = await state.get_data()
     leave_ids = data.get("leave_msgs", [])
@@ -201,47 +241,71 @@ async def cb_delete_group_cancel(callback: types.CallbackQuery, state: FSMContex
     await state.clear()
     await callback.answer()
 
+@router.callback_query(F.data.startswith("delete_group_yes_"))
+async def cb_delete_group_yes(callback: types.CallbackQuery, state: FSMContext):
+    group_id = int(callback.data.split("_")[-1])
+    user_id = callback.from_user.id
+    async with AsyncSessionLocal() as session:
+        user = await session.execute(select(User).where(User.telegram_user_id == user_id))
+        user = user.scalar()
+    # Удаляем группу через сервис
+    result = await delete_group_service(group_id)
+    if result["ok"]:
+        await callback.message.answer(get_message("Группа успешно удалена.", user=user))
+        await clear_mygroups_messages(callback.message, state)
+        await state.clear()
+    else:
+        await callback.message.answer(get_message("Ошибка при удалении группы.", user=user))
+    await callback.answer()
+
 # --- Group-related handlers ---
 
 @router.callback_query(F.data == "create_new_group")
 async def cb_create_group(callback: types.CallbackQuery, state: FSMContext):
     is_creator = await is_group_creator(callback.from_user.id)
     if not is_creator:
-        await callback.message.answer("You are not allowed to create groups.")
+        await callback.message.answer(get_message("You are not allowed to create groups.", user=callback.from_user))
         await callback.answer()
         return
-    await callback.message.answer("Enter group name:", reply_markup=types.ReplyKeyboardRemove())
+    await callback.message.answer(get_message("Enter group name:", user=callback.from_user), reply_markup=types.ReplyKeyboardRemove())
     await state.set_state(CreateGroup.name)
     await callback.answer()
 
 @router.message(CreateGroup.name)
 async def group_name_step(message: types.Message, state: FSMContext):
     name = message.text.strip()
+    async with AsyncSessionLocal() as session:
+        user = await session.execute(select(User).where(User.telegram_user_id == message.from_user.id))
+        user = user.scalar()
     if not name:
-        await message.answer("Name can't be empty. Enter group name:")
+        await message.answer(get_message(GROUPS_NAME_EMPTY, user=user))
         return
     await state.update_data(name=name)
-    await message.answer("Enter group description:")
+    await message.answer(get_message("Enter group description:", user=user))
     await state.set_state(CreateGroup.description)
 
 @router.message(CreateGroup.description)
 async def group_desc_step(message: types.Message, state: FSMContext):
     desc = message.text.strip()
+    async with AsyncSessionLocal() as session:
+        user = await session.execute(select(User).where(User.telegram_user_id == message.from_user.id))
+        user = user.scalar()
     if not desc:
-        await message.answer("Description can't be empty. Enter group description:")
+        await message.answer(get_message(GROUPS_DESC_EMPTY, user=user))
         return
     data = await state.get_data()
     group = await create_group_service(message.from_user.id, data["name"], desc)
     bot_info = await bot.get_me()
     deep_link = f"https://t.me/{bot_info.username}?start={group['invite_code']}"
     await message.answer(
-        f"✅ Group '{group['name']}' created! Invite code: {group['invite_code']}\nInvite link: {deep_link}",
-        reply_markup=go_to_group_keyboard(group["id"], group["name"]))
+        get_message(GROUPS_CREATED, user=user, group_name=group["name"], invite_code=group["invite_code"], deep_link=deep_link),
+        reply_markup=go_to_group_keyboard(group["id"], group["name"], user))
     await state.clear()
 
 async def show_group_welcome_and_question(message, user_id, group_id):
     import logging
     try:
+        print(f"[DEBUG] show_group_welcome_and_question called: user_id={user_id}, group_id={group_id}")
         from src.services.groups import get_group_balance
         from src.services.groups import is_onboarded
         from src.services.groups import get_user_groups
@@ -252,21 +316,54 @@ async def show_group_welcome_and_question(message, user_id, group_id):
         from src.db import AsyncSessionLocal
         from src.models import User
         from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
-
+        async with AsyncSessionLocal() as session:
+            user = await session.execute(select(User).where(User.telegram_user_id == user_id))
+            user = user.scalar()
+            print(f"[DEBUG] loaded user: {user}")
         onboarded = await is_onboarded(user_id, group_id)
+        print(f"[DEBUG] onboarded={onboarded}")
         if onboarded:
-            balance = await get_group_balance(user_id, group_id)
-            groups = await get_user_groups(user_id)
-            group = next((g for g in groups if g["id"] == group_id), None)
-            group_name = group["name"] if group else "this group"
-            await message.answer(
-                f"Welcome back to {group_name}. Your balance is {balance}💎 points.",
-                reply_markup=get_group_reply_keyboard()
-            )
-            # Показываем кнопку Load answered questions, если есть хотя бы один ответ (до новых вопросов)
             async with AsyncSessionLocal() as session:
-                user = await session.execute(select(User).where(User.telegram_user_id == user_id))
-                user = user.scalar()
+                print(f"[DEBUG] in onboarded block, user={user}, group_id={group_id}")
+                balance = await get_group_balance(user_id, group_id)
+                groups = await get_user_groups(user_id)
+                print(f"[DEBUG] groups={groups}")
+                group = next((g for g in groups if g["id"] == group_id), None)
+                print(f"[DEBUG] group={group}")
+                group_name = group["name"] if group else "this group"
+                # --- Welcome-back с мэтч-кнопкой ---
+                await message.answer(
+                    get_message(f"Welcome back to {group_name}. Your balance is {balance}💎 points.", user=user),
+                    reply_markup=get_group_reply_keyboard(user)
+                )
+                # --- Кнопка истории ---
+                any_answers = await session.execute(
+                    select(Answer).where(
+                        Answer.user_id == user.id,
+                        Answer.question_id.in_(select(Question.id).where(Question.group_id == group_id))
+                    )
+                )
+                any_answers = any_answers.scalars().all()
+                valid_answers = await session.execute(
+                    select(Answer).where(
+                        Answer.user_id == user.id,
+                        Answer.value.isnot(None),
+                        Answer.question_id.in_(select(Question.id).where(Question.group_id == group_id, Question.is_deleted == 0))
+                    )
+                )
+                valid_answers = valid_answers.scalars().all()
+                print(f"[DEBUG] any_answers: {len(any_answers)}, valid_answers: {len(valid_answers)} for user_id={user.id}, group_id={group_id}")
+                print(f"[DEBUG] any_answers content: {any_answers}")
+                print(f"[DEBUG] valid_answers content: {valid_answers}")
+                if len(any_answers) > 0:
+                    kb_hist = types.InlineKeyboardMarkup(inline_keyboard=[[types.InlineKeyboardButton(text=get_message(QUESTION_LOAD_ANSWERED, user=user), callback_data="load_answered_questions")]])
+                    if valid_answers:
+                        msg = await message.answer(get_message(GROUPS_REVIEW_ANSWERED, user=user), reply_markup=kb_hist)
+                        print(f"[DEBUG] Sent answered questions msg_id={msg.message_id}")
+                    else:
+                        msg = await message.answer(get_message(NO_AVAILABLE_ANSWERED_QUESTIONS, user=user), reply_markup=kb_hist)
+                        print(f"[DEBUG] Sent no available answered questions msg_id={msg.message_id}")
+                # --- Вопросы ---
                 answers_count = await session.execute(
                     select(Answer).where(
                         Answer.user_id == user.id,
@@ -275,16 +372,14 @@ async def show_group_welcome_and_question(message, user_id, group_id):
                     )
                 )
                 answers_count = len(answers_count.scalars().all())
-                if answers_count > 0:
-                    kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="Load answered questions", callback_data="load_answered_questions")]])
-                    await message.answer(".", reply_markup=kb)
                 next_q = await get_next_unanswered_question(session, group_id, user.id)
                 if next_q:
                     await send_question_to_user(bot, user, next_q)
                 else:
-                    await message.answer("No new questions in this group yet.")
+                    await message.answer(get_message(GROUPS_NO_NEW_QUESTIONS, user=user))
+            # Клавиатура мэтча уже отправлена с welcome-back
         else:
-            await message.answer("Let's set up your profile for this group!\nEnter your nickname:", reply_markup=types.ReplyKeyboardRemove())
+            await message.answer(get_message(GROUPS_PROFILE_SETUP, user=user), reply_markup=types.ReplyKeyboardRemove())
             from src.fsm.states import Onboarding
             from aiogram.fsm.context import FSMContext
             state = FSMContext(message.bot, message.chat.id, message.from_user.id)
@@ -304,7 +399,10 @@ async def cb_switch_to_group(callback: types.CallbackQuery, state: FSMContext):
         await show_group_welcome_and_question(callback.message, user_id, group_id)
         await callback.answer()
     else:
-        await callback.message.answer("Let's set up your profile for this group!\nEnter your nickname:", reply_markup=types.ReplyKeyboardRemove())
+        async with AsyncSessionLocal() as session:
+            user = await session.execute(select(User).where(User.telegram_user_id == user_id))
+            user = user.scalar()
+        await callback.message.answer(get_message("Let's set up your profile for this group!\nEnter your nickname:", user=user), reply_markup=types.ReplyKeyboardRemove())
         await state.update_data(group_id=group_id)
         from src.fsm.states import Onboarding
         await state.set_state(Onboarding.nickname)
@@ -312,7 +410,10 @@ async def cb_switch_to_group(callback: types.CallbackQuery, state: FSMContext):
 
 @router.callback_query(F.data == "join_another_group_with_code")
 async def cb_join_group(callback: types.CallbackQuery, state: FSMContext):
-    await callback.message.answer("Enter the 5-character invite code:", reply_markup=types.ReplyKeyboardRemove())
+    async with AsyncSessionLocal() as session:
+        user = await session.execute(select(User).where(User.telegram_user_id == callback.from_user.id))
+        user = user.scalar()
+    await callback.message.answer(get_message("Enter the 5-character invite code:", user=user), reply_markup=types.ReplyKeyboardRemove())
     from src.fsm.states import JoinGroup
     await state.set_state(JoinGroup.code)
     await callback.answer()
@@ -320,22 +421,24 @@ async def cb_join_group(callback: types.CallbackQuery, state: FSMContext):
 @router.message(JoinGroup.code)
 async def process_invite_code(message: types.Message, state: FSMContext):
     code = message.text.strip()
+    async with AsyncSessionLocal() as session:
+        user = await session.execute(select(User).where(User.telegram_user_id == message.from_user.id))
+        user = user.scalar()
     if not code or len(code) != 5:
-        await message.answer("Invalid code. Enter the 5-character invite code:")
+        await message.answer(get_message(GROUPS_JOIN_INVALID_CODE, user=user))
         return
     group = await join_group_by_code_service(message.from_user.id, code)
     if not group:
-        await message.answer("Group not found. Check the code and try again.")
+        await message.answer(get_message(GROUPS_JOIN_NOT_FOUND, user=user))
         return
     if group.get("needs_onboarding"):
-        await message.answer(f"Joining '{group['name']}'. Let's set up your profile!\nEnter your nickname:", reply_markup=types.ReplyKeyboardRemove())
+        await message.answer(get_message(GROUPS_JOIN_ONBOARDING, user=user, group_name=group["name"]), reply_markup=types.ReplyKeyboardRemove())
         await state.update_data(group_id=group["id"])
         from src.fsm.states import Onboarding
         await state.set_state(Onboarding.nickname)
         return
-    await message.answer(f"You joined group '{group['name']}'! 🎉\nYou received a welcome bonus: +{WELCOME_BONUS}💎 points.", reply_markup=go_to_group_keyboard(group["id"], group["name"]))
-    # Добавляем кнопку Who is vibing
-    await message.answer("You can find your best match at any time:", reply_markup=get_group_reply_keyboard())
+    await message.answer(get_message(GROUPS_JOINED, user=user, group_name=group["name"], bonus=WELCOME_BONUS), reply_markup=go_to_group_keyboard(group["id"], group["name"], user))
+    # Клавиатура мэтча будет показана после входа в группу
     await state.clear()
 
 @router.callback_query(F.data.startswith("find_match_"))
@@ -349,7 +452,7 @@ async def cb_find_match(callback: types.CallbackQuery, state: FSMContext):
         user = await session.execute(select(User).where(User.telegram_user_id == user_id))
         user = user.scalar()
         if not user:
-            await callback.answer("User not found.", show_alert=True)
+            await callback.answer(get_message(MATCH_NO_VALID, user=user, show_alert=True))
             return
         # Считаем количество ответов пользователя в группе
         answers_count = await session.execute(
@@ -363,25 +466,25 @@ async def cb_find_match(callback: types.CallbackQuery, state: FSMContext):
         member = await session.execute(select(GroupMember).where(GroupMember.user_id == user.id, GroupMember.group_id == group_id))
         member = member.scalar()
         if not member or member.balance < POINTS_FOR_MATCH:
-            await callback.message.answer(f"Not enough points for match. Your balance: {member.balance if member else 0}. Answer more questions or create new ones to earn points!")
+            await callback.message.answer(get_message(f"Not enough points for match. Your balance: {member.balance if member else 0}.", user=user))
             return
         if answers_count < MIN_ANSWERS_FOR_MATCH:
-            await callback.message.answer(f"You need to answer at least {MIN_ANSWERS_FOR_MATCH} questions to get a match. You have answered: {answers_count}. Keep answering or create new questions!")
+            await callback.message.answer(get_message(f"You need to answer at least {MIN_ANSWERS_FOR_MATCH} questions to get a match. You have answered: {answers_count}. Keep answering or create new questions!", user=user))
             return
         # Поиск мэтча
         match = await find_best_match(user_id, group_id)
-        if not match:
-            await callback.answer("No valid matches found yet. Try answering more questions!", show_alert=True)
+        if not match or not match.get('telegram_user_id'):
+            await callback.answer(get_message(MATCH_NO_VALID, user=user, show_alert=True))
             return
         # Списываем баллы
         member.balance -= POINTS_FOR_MATCH
         await session.commit()
         # Показываем UX мэтча
-        text = f"<b>{match['nickname']}</b>\nCohesion: <b>{match['similarity']}%</b> ({match['common_questions']} questions, matched from {match['valid_users_count']} users)"
+        text = get_message(MATCH_FOUND, user=user, nickname=match['nickname'], similarity=match['similarity'], common_questions=match['common_questions'], valid_users_count=match['valid_users_count'])
         kb = types.InlineKeyboardMarkup(inline_keyboard=[
-            [types.InlineKeyboardButton(text=f"AI Chemistry Insights and Chat ({POINTS_TO_CONNECT}💎)", callback_data=f"match_chat_{match['telegram_user_id']}")],
-            [types.InlineKeyboardButton(text="Show again", callback_data=f"match_postpone_{match['telegram_user_id']}")],
-            [types.InlineKeyboardButton(text="Don't show again", callback_data=f"match_hide_{match['telegram_user_id']}")]
+            [types.InlineKeyboardButton(text=get_message(MATCH_AI_CHEMISTRY, user=user, points=POINTS_TO_CONNECT), callback_data=f"match_chat_{match['user_id']}")],
+            [types.InlineKeyboardButton(text=get_message(MATCH_SHOW_AGAIN, user=user), callback_data=f"match_postpone_{match['user_id']}")],
+            [types.InlineKeyboardButton(text=get_message(MATCH_DONT_SHOW, user=user), callback_data=f"match_hide_{match['user_id']}")]
         ])
         if match['photo_url']:
             await callback.message.answer_photo(match['photo_url'], caption=text, reply_markup=kb, parse_mode="HTML")
@@ -407,7 +510,7 @@ async def cb_match_hide(callback: types.CallbackQuery, state: FSMContext):
         except Exception:
             pass
         # Отправляем уведомление и удаляем его через 5 секунд
-        notif = await callback.message.answer("This user will no longer be shown to you.")
+        notif = await callback.message.answer(get_message("This user will no longer be shown to you.", user=callback.from_user))
         await asyncio.sleep(5)
         try:
             await notif.delete()
@@ -447,7 +550,7 @@ async def cb_match_postpone(callback: types.CallbackQuery, state: FSMContext):
                     pass
                 await state.update_data(vibing_msg_id=None)
             # Отправляем уведомление и удаляем его через 5 секунд
-            notif = await callback.message.answer("This match will be shown to you again.")
+            notif = await callback.message.answer(get_message("This match will be shown to you again.", user=callback.from_user))
             await asyncio.sleep(5)
             try:
                 await notif.delete()
@@ -455,18 +558,17 @@ async def cb_match_postpone(callback: types.CallbackQuery, state: FSMContext):
                 pass
     await callback.answer()
 
-@router.message(F.text == f"Who is vibing the most right now ({POINTS_FOR_MATCH}💎)")
+@router.message(F.text.func(lambda t: t and ("vibing" in t.lower() or "совпадает" in t.lower())))
 async def handle_vibing_button(message: types.Message, state: FSMContext):
     import logging
     try:
-        # Сохраняем message_id сообщения с кнопкой мэтча
         await state.update_data(vibing_msg_id=message.message_id)
         async with AsyncSessionLocal() as session:
             user = await session.execute(select(User).where(User.telegram_user_id == message.from_user.id))
             user = user.scalar()
             group_id = user.current_group_id if user else None
         if not group_id:
-            await message.answer("You are not in a group.")
+            await message.answer(get_message("You are not in a group.", user=user))
             return
         from src.handlers.groups import cb_find_match
         class DummyCallback:
@@ -488,28 +590,20 @@ async def cb_match_chat(callback: types.CallbackQuery, state: FSMContext):
     user_id = callback.from_user.id
     match_user_id = int(callback.data.split("_")[-1])
     from src.models import MatchStatus
-    # Проверяем баланс
     async with AsyncSessionLocal() as session:
         user = await session.execute(select(User).where(User.telegram_user_id == user_id))
         user = user.scalar()
         group_id = user.current_group_id if user else None
         member = await session.execute(select(GroupMember).where(GroupMember.user_id == user.id, GroupMember.group_id == group_id))
         member = member.scalar()
-        if not member or member.balance < POINTS_TO_CONNECT:
-            await callback.message.answer(f"Not enough points to start chat. Your balance: {member.balance if member else 0}. Answer more questions or create new ones to earn points!")
-            await callback.answer()
-            return
-        # Списываем баллы
-        member.balance -= POINTS_TO_CONNECT
-        # --- СОЗДАЁМ ЗАПИСЬ О МЭТЧЕ ДЛЯ ОБОИХ ПОЛЬЗОВАТЕЛЕЙ ---
-        # Получаем внутренние user.id для обоих
-        match_user = await session.execute(select(User).where(User.telegram_user_id == match_user_id))
+        print(f"[DEBUG] cb_match_chat: user_id={user_id}, match_user_id={match_user_id}, group_id={group_id}")
+        match_user = await session.execute(select(User).where(User.id == match_user_id))
         match_user = match_user.scalar()
+        print(f"[DEBUG] cb_match_chat: match_user={match_user}")
         if not match_user:
-            await callback.message.answer("Match user not found.")
+            await callback.message.answer(get_message("Match user not found.", user=user))
             await callback.answer()
             return
-        # Создаём/обновляем статус мэтча для инициатора
         obj1 = await session.execute(select(MatchStatus).where(
             MatchStatus.user_id == user.id,
             MatchStatus.group_id == group_id,
@@ -521,7 +615,6 @@ async def cb_match_chat(callback: types.CallbackQuery, state: FSMContext):
             session.add(obj1)
         else:
             obj1.status = "matched"
-        # Создаём/обновляем статус мэтча для второго пользователя
         obj2 = await session.execute(select(MatchStatus).where(
             MatchStatus.user_id == match_user.id,
             MatchStatus.group_id == group_id,
@@ -533,7 +626,6 @@ async def cb_match_chat(callback: types.CallbackQuery, state: FSMContext):
             session.add(obj2)
         else:
             obj2.status = "matched"
-        # --- СОЗДАЁМ ЗАПИСЬ В matches ---
         user1_id = min(user.id, match_user.id)
         user2_id = max(user.id, match_user.id)
         match_obj = await session.execute(select(Match).where(
@@ -547,12 +639,10 @@ async def cb_match_chat(callback: types.CallbackQuery, state: FSMContext):
             match_obj = Match(user1_id=user1_id, user2_id=user2_id, group_id=group_id, created_at=datetime.now(UTC), status="active")
             session.add(match_obj)
         await session.commit()
-    # Удаляем сообщения мэтча (фото/текст)
     try:
         await callback.message.delete()
     except Exception:
         pass
-    # Удаляем исходное сообщение с кнопкой мэтча, если оно есть
     data = await state.get_data()
     vibing_msg_id = data.get("vibing_msg_id")
     if vibing_msg_id:
@@ -561,26 +651,23 @@ async def cb_match_chat(callback: types.CallbackQuery, state: FSMContext):
         except Exception:
             pass
         await state.update_data(vibing_msg_id=None)
-    # Показываем url-кнопку для перехода в чат-бот инициатору
     param = quote(f"match_{user_id}_{match_user_id}")
     link = f"https://t.me/{ALLKINDS_CHAT_BOT_USERNAME}?start={param}"
     kb = types.InlineKeyboardMarkup(inline_keyboard=[
-        [types.InlineKeyboardButton(text="Go to Allkinds Chat Bot", url=link)]
+        [types.InlineKeyboardButton(text=get_message("Go to Allkinds Chat Bot", user=user), url=link)]
     ])
-    notif = await callback.message.answer("Click the button below to start your private chat:", reply_markup=kb)
-    # --- УВЕДОМЛЯЕМ ВТОРОГО ПОЛЬЗОВАТЕЛЯ ---
-    # Получаем telegram_user_id второго пользователя
+    notif = await callback.message.answer(get_message("Click the button below to start your private chat:", user=user), reply_markup=kb)
     async with AsyncSessionLocal() as session:
-        match_user = await session.execute(select(User).where(User.telegram_user_id == match_user_id))
+        match_user = await session.execute(select(User).where(User.id == match_user_id))
         match_user = match_user.scalar()
         if match_user:
             param2 = quote(f"match_{match_user_id}_{user_id}")
             link2 = f"https://t.me/{ALLKINDS_CHAT_BOT_USERNAME}?start={param2}"
             kb2 = types.InlineKeyboardMarkup(inline_keyboard=[
-                [types.InlineKeyboardButton(text="Go to Allkinds Chat Bot", url=link2)]
+                [types.InlineKeyboardButton(text=get_message("Go to Allkinds Chat Bot", user=match_user), url=link2)]
             ])
             try:
-                await callback.bot.send_message(match_user.telegram_user_id, "You have a new match! Click below to start your private chat:", reply_markup=kb2)
+                await callback.bot.send_message(match_user.telegram_user_id, get_message("You have a new match! Click below to start your private chat:", user=match_user), reply_markup=kb2)
             except Exception:
                 pass
     await asyncio.sleep(5)

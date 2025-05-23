@@ -24,7 +24,8 @@ async def on_startup(app):
     commands = [
         types.BotCommand(command="start", description="Start the bot"),
         types.BotCommand(command="instructions", description="Show instructions"),
-        types.BotCommand(command="mygroups", description="Show your groups")
+        types.BotCommand(command="mygroups", description="Show your groups"),
+        types.BotCommand(command="language", description="Change language / Сменить язык"),
     ]
     await bot.set_my_commands(commands)
 
@@ -51,7 +52,8 @@ async def main():
     commands = [
         types.BotCommand(command="start", description="Start the bot"),
         types.BotCommand(command="instructions", description="Show instructions"),
-        types.BotCommand(command="mygroups", description="Show your groups")
+        types.BotCommand(command="mygroups", description="Show your groups"),
+        types.BotCommand(command="language", description="Change language / Сменить язык"),
     ]
     await bot.set_my_commands(commands)
     

@@ -7,9 +7,10 @@ Base = declarative_base()
 class User(Base):
     __tablename__ = 'users'
     id = Column(Integer, primary_key=True)
-    telegram_user_id = Column(BigInteger, unique=True, nullable=False)
+    telegram_user_id = Column(BigInteger, unique=True, index=True, nullable=False)
     current_group_id = Column(Integer, ForeignKey('groups.id'), nullable=True)
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
+    language = Column(String(8), default='en')  # Язык пользователя для мультиязычности
     
     memberships = relationship('GroupMember', back_populates='user')
     created_groups = relationship('Group', back_populates='creator', foreign_keys='Group.creator_user_id')
@@ -30,8 +31,8 @@ class Group(Base):
 class GroupMember(Base):
     __tablename__ = 'group_members'
     id = Column(Integer, primary_key=True)
-    group_id = Column(Integer, ForeignKey('groups.id', ondelete='CASCADE'))
-    user_id = Column(Integer, ForeignKey('users.id', ondelete='CASCADE'))
+    group_id = Column(Integer, ForeignKey('groups.id', ondelete='CASCADE'), index=True)
+    user_id = Column(Integer, ForeignKey('users.id', ondelete='CASCADE'), index=True)
     nickname = Column(String(64), nullable=True)
     photo_url = Column(String(255), nullable=True)
     geolocation_lat = Column(Float)
@@ -56,7 +57,7 @@ class GroupCreator(Base):
 class Question(Base):
     __tablename__ = 'questions'
     id = Column(Integer, primary_key=True)
-    group_id = Column(Integer, ForeignKey('groups.id', ondelete='CASCADE'), nullable=False)
+    group_id = Column(Integer, ForeignKey('groups.id', ondelete='CASCADE'), nullable=False, index=True)
     author_id = Column(Integer, ForeignKey('users.id', ondelete='CASCADE'), nullable=False)
     text = Column(Text, nullable=False)
     embedding = Column(String, nullable=True)  # для future AI
@@ -70,11 +71,12 @@ class Question(Base):
 class Answer(Base):
     __tablename__ = 'answers'
     id = Column(Integer, primary_key=True)
-    question_id = Column(Integer, ForeignKey('questions.id', ondelete='CASCADE'), nullable=False)
-    user_id = Column(Integer, ForeignKey('users.id', ondelete='CASCADE'), nullable=False)
+    question_id = Column(Integer, ForeignKey('questions.id', ondelete='CASCADE'), nullable=False, index=True)
+    user_id = Column(Integer, ForeignKey('users.id', ondelete='CASCADE'), nullable=False, index=True)
     value = Column(Integer, nullable=True)  # -2, -1, 0, 1, 2
-    is_skipped = Column(Integer, default=0)
+    status = Column(String(16), default='delivered', nullable=False, index=True)  # delivered, answered
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
+    __table_args__ = (UniqueConstraint('question_id', 'user_id'),)
 
     question = relationship('Question', back_populates='answers')
     user = relationship('User')
@@ -82,9 +84,9 @@ class Answer(Base):
 class MatchStatus(Base):
     __tablename__ = 'match_statuses'
     id = Column(Integer, primary_key=True)
-    user_id = Column(Integer, ForeignKey('users.id', ondelete='CASCADE'), nullable=False)
-    group_id = Column(Integer, ForeignKey('groups.id', ondelete='CASCADE'), nullable=False)
-    match_user_id = Column(Integer, ForeignKey('users.id', ondelete='CASCADE'), nullable=False)
+    user_id = Column(Integer, ForeignKey('users.id', ondelete='CASCADE'), nullable=False, index=True)
+    group_id = Column(Integer, ForeignKey('groups.id', ondelete='CASCADE'), nullable=False, index=True)
+    match_user_id = Column(Integer, ForeignKey('users.id', ondelete='CASCADE'), nullable=False, index=True)
     status = Column(String(16), nullable=False)  # 'hidden' | 'postponed'
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
     __table_args__ = (UniqueConstraint('user_id', 'group_id', 'match_user_id', name='_match_uc'),) 

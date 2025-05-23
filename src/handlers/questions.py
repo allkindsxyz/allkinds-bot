@@ -15,6 +15,14 @@ from src.constants import POINTS_FOR_NEW_QUESTION, POINTS_FOR_ANSWER
 from src.db import AsyncSessionLocal
 from sqlalchemy import select, and_
 from src.models import User, GroupMember, Question, Answer, Group
+from src.texts.messages import (
+    get_message,
+    QUESTION_TOO_SHORT, QUESTION_MUST_JOIN_GROUP, QUESTION_DUPLICATE, QUESTION_REJECTED, QUESTION_ADDED, QUESTION_DELETED,
+    QUESTION_ALREADY_DELETED, QUESTION_ONLY_AUTHOR_OR_CREATOR, QUESTION_ANSWER_SAVED, QUESTION_NO_ANSWERED, QUESTION_MORE_ANSWERED,
+    QUESTION_NO_MORE_ANSWERED, QUESTION_CAN_CHANGE_ANSWER, QUESTION_INTERNAL_ERROR, QUESTION_LOAD_ANSWERED, QUESTION_LOAD_MORE,
+    QUESTION_DELETE, UNANSWERED_QUESTIONS_MSG, BTN_LOAD_UNANSWERED
+)
+import logging
 
 router = Router()
 
@@ -25,25 +33,28 @@ async def handle_new_question(message: types.Message, state: FSMContext):
     """Создание нового вопроса: сохраняем вопрос, начисляем баллы автору."""
     import asyncio
     text = message.text.strip()
+    async with AsyncSessionLocal() as session:
+        user = await session.execute(select(User).where(User.telegram_user_id == message.from_user.id))
+        user = user.scalar()
     if len(text) < 5:
-        await message.answer("Question too short. Please enter a more detailed question.")
+        await message.answer(get_message(QUESTION_TOO_SHORT, user=user))
         return
     user_id = message.from_user.id
     async with AsyncSessionLocal() as session:
         user = await session.execute(select(User).where(User.telegram_user_id == user_id))
         user = user.scalar()
         if not user or not user.current_group_id:
-            await message.answer("You must join a group before asking questions.")
+            await message.answer(get_message(QUESTION_MUST_JOIN_GROUP, user=user))
             return
         # Проверка на дубликаты
         is_dup = await is_duplicate_question(session, user.current_group_id, text)
         if is_dup:
-            await message.answer("This question already exists in the group.")
+            await message.answer(get_message(QUESTION_DUPLICATE, user=user))
             return
         # Модерация
         ok, reason = await moderate_question(text)
         if not ok:
-            await message.answer(reason or "Question rejected by moderation.")
+            await message.answer(reason or get_message(QUESTION_REJECTED, user=user))
             return
         # Сохраняем вопрос
         q = Question(group_id=user.current_group_id, author_id=user.id, text=text)
@@ -60,7 +71,7 @@ async def handle_new_question(message: types.Message, state: FSMContext):
         except Exception:
             pass
         # Отправляем сообщение о добавлении вопроса и удаляем его через 1 секунду
-        info_msg = await message.answer(f"✅ Question added! You received +{POINTS_FOR_NEW_QUESTION}💎 points.")
+        info_msg = await message.answer(get_message(QUESTION_ADDED, user=user, points=POINTS_FOR_NEW_QUESTION))
         await asyncio.sleep(1)
         try:
             await info_msg.delete()
@@ -88,13 +99,19 @@ async def cb_answer_question(callback: types.CallbackQuery, state: FSMContext):
         value = int(parts[2])
     except Exception:
         logging.error(f"[cb_answer_question] Invalid answer value (not int): {parts[2]}")
-        await callback.answer("Internal error: invalid answer value.", show_alert=True)
+        async with AsyncSessionLocal() as session:
+            user = await session.execute(select(User).where(User.telegram_user_id == callback.from_user.id))
+            user = user.scalar()
+        await callback.answer(get_message(QUESTION_INTERNAL_ERROR, user=user, show_alert=True))
         return
     user_id = callback.from_user.id
     allowed_values = set(ANSWER_VALUE_TO_EMOJI.keys())
     if value not in allowed_values:
         logging.error(f"[cb_answer_question] Invalid answer value: {value}")
-        await callback.answer("Internal error: invalid answer value.", show_alert=True)
+        async with AsyncSessionLocal() as session:
+            user = await session.execute(select(User).where(User.telegram_user_id == callback.from_user.id))
+            user = user.scalar()
+        await callback.answer(get_message(QUESTION_INTERNAL_ERROR, user=user, show_alert=True))
         return
     async with AsyncSessionLocal() as session:
         user = await session.execute(select(User).where(User.telegram_user_id == user_id))
@@ -102,7 +119,7 @@ async def cb_answer_question(callback: types.CallbackQuery, state: FSMContext):
         question = await session.execute(select(Question).where(Question.id == qid, Question.is_deleted == 0))
         question = question.scalar()
         if not question:
-            await callback.answer("Question was deleted.", show_alert=True)
+            await callback.answer(get_message(QUESTION_ALREADY_DELETED, user=user, show_alert=True))
             await callback.message.delete()
             return
         group_obj = await session.execute(select(Group).where(Group.id == question.group_id))
@@ -111,34 +128,57 @@ async def cb_answer_question(callback: types.CallbackQuery, state: FSMContext):
         ans = await session.execute(select(Answer).where(and_(Answer.question_id == qid, Answer.user_id == user.id)))
         ans = ans.scalar()
         if ans and ans.value == value:
+            # Клик по уже выбранному значению — показать все кнопки
             await show_question_with_all_buttons(callback, question, user, creator_user_id)
-            await callback.answer("You can change your answer.")
+            await callback.answer(get_message(QUESTION_CAN_CHANGE_ANSWER, user=user))
             return
+        # Новый ответ или смена ответа
         if not ans:
-            ans = Answer(question_id=qid, user_id=user.id)
+            ans = Answer(question_id=qid, user_id=user.id, status='answered', value=value)
             session.add(ans)
-            member = await session.execute(select(GroupMember).where(GroupMember.user_id == user.id, GroupMember.group_id == question.group_id))
-            member = member.scalar()
-            if member:
-                member.balance += POINTS_FOR_ANSWER
-        ans.value = value
-        ans.is_skipped = int(value == 0)
+        else:
+            ans.value = value
+            ans.status = 'answered'
+        member = await session.execute(select(GroupMember).where(GroupMember.user_id == user.id, GroupMember.group_id == question.group_id))
+        member = member.scalar()
+        if member:
+            member.balance += POINTS_FOR_ANSWER
         await session.commit()
+        # Показываем только выбранную кнопку (и Delete)
         await show_question_with_selected_button(callback, question, user, value, creator_user_id)
-        await callback.answer("Answer saved.")
+        await callback.answer(get_message(QUESTION_ANSWER_SAVED, user=user))
+        # --- Следующий вопрос из очереди ---
+        # 1. Ищем вопросы, которых нет в answers (не доставленные)
         next_q = await get_next_unanswered_question(session, question.group_id, user.id)
         if next_q:
             await send_question_to_user(bot, user, next_q, creator_user_id)
+        else:
+            # 2. Если нет новых, ищем delivered без ответа
+            unanswered = await session.execute(
+                select(Answer).where(
+                    Answer.user_id == user.id,
+                    Answer.status == 'delivered',
+                    Answer.value.is_(None)
+                )
+            )
+            unanswered = unanswered.scalars().all()
+            if unanswered:
+                count = len(unanswered)
+                msg = get_message(UNANSWERED_QUESTIONS_MSG, user=user, count=count)
+                kb = types.InlineKeyboardMarkup(inline_keyboard=[[types.InlineKeyboardButton(text=get_message(BTN_LOAD_UNANSWERED, user=user), callback_data="load_unanswered")]])
+                await callback.message.answer(msg, reply_markup=kb, parse_mode="HTML")
 
 @router.callback_query(F.data.startswith("delete_question_"))
 async def cb_delete_question(callback: types.CallbackQuery, state: FSMContext):
     qid = int(callback.data.split("_")[-1])
     user_id = callback.from_user.id
     async with AsyncSessionLocal() as session:
+        user = await session.execute(select(User).where(User.telegram_user_id == user_id))
+        user = user.scalar()
         question = await session.execute(select(Question).where(Question.id == qid, Question.is_deleted == 0))
         question = question.scalar()
         if not question:
-            await callback.answer("Question already deleted.", show_alert=True)
+            await callback.answer(get_message(QUESTION_ALREADY_DELETED, user=user, show_alert=True))
             await callback.message.delete()
             return
         author = await session.execute(select(User).where(User.id == question.author_id))
@@ -153,7 +193,7 @@ async def cb_delete_question(callback: types.CallbackQuery, state: FSMContext):
         if creator:
             allowed_telegram_ids.add(creator.telegram_user_id)
         if user_id not in allowed_telegram_ids:
-            await callback.answer("Only the author or group creator can delete this question.", show_alert=True)
+            await callback.answer(get_message(QUESTION_ONLY_AUTHOR_OR_CREATOR, user=user, show_alert=True))
             return
         question.is_deleted = 1
         await session.execute(Answer.__table__.delete().where(Answer.question_id == qid))
@@ -162,7 +202,7 @@ async def cb_delete_question(callback: types.CallbackQuery, state: FSMContext):
             await callback.message.delete()
         except Exception as e:
             logging.error(f"[cb_delete_question] Failed to delete message: {e}")
-        await callback.answer("Question deleted.")
+        await callback.answer(get_message(QUESTION_DELETED, user=user))
 
 ANSWERED_PAGE_SIZE = 10
 
@@ -188,7 +228,7 @@ async def cb_load_answered_questions(callback: types.CallbackQuery, state: FSMCo
         )
         answers = answers.scalars().all()
         if not answers:
-            await callback.answer("No answered questions yet.", show_alert=True)
+            await callback.answer(get_message(QUESTION_NO_ANSWERED, user=user, show_alert=True))
             return
         for ans in answers:
             question = await session.execute(select(Question).where(Question.id == ans.question_id))
@@ -204,7 +244,7 @@ async def cb_load_answered_questions(callback: types.CallbackQuery, state: FSMCo
         total_count = len(total_count.scalars().all())
         if total_count > ANSWERED_PAGE_SIZE:
             kb = get_load_more_keyboard(1)
-            await callback.message.answer("More answered questions available:", reply_markup=kb)
+            await callback.message.answer(get_message(QUESTION_MORE_ANSWERED, user=user, reply_markup=kb))
     await callback.answer()
 
 @router.callback_query(F.data.startswith("load_answered_questions_more_"))
@@ -231,7 +271,7 @@ async def cb_load_answered_questions_more(callback: types.CallbackQuery, state: 
         )
         answers = answers.scalars().all()
         if not answers:
-            await callback.answer("No more answered questions.", show_alert=True)
+            await callback.answer(get_message(QUESTION_NO_MORE_ANSWERED, user=user, show_alert=True))
             return
         for ans in answers:
             question = await session.execute(select(Question).where(Question.id == ans.question_id))
@@ -247,7 +287,40 @@ async def cb_load_answered_questions_more(callback: types.CallbackQuery, state: 
         total_count = len(total_count.scalars().all())
         if total_count > offset + ANSWERED_PAGE_SIZE:
             kb = get_load_more_keyboard(page+1)
-            await callback.message.answer("More answered questions available:", reply_markup=kb)
+            await callback.message.answer(get_message(QUESTION_MORE_ANSWERED, user=user, reply_markup=kb))
+    await callback.answer()
+
+@router.callback_query(F.data == "load_unanswered")
+async def cb_load_unanswered(callback: types.CallbackQuery, state: FSMContext):
+    user_id = callback.from_user.id
+    async with AsyncSessionLocal() as session:
+        user = await session.execute(select(User).where(User.telegram_user_id == user_id))
+        user = user.scalar()
+        unanswered = await session.execute(
+            select(Answer).where(
+                Answer.user_id == user.id,
+                Answer.status == 'delivered',
+                Answer.value.is_(None)
+            )
+        )
+        unanswered = unanswered.scalars().all()
+        if not unanswered:
+            try:
+                await callback.message.delete()
+            except Exception:
+                pass
+            await callback.answer()
+            return
+        # Показываем первый неотвеченный delivered-вопрос
+        question = await session.execute(select(Question).where(Question.id == unanswered[0].question_id))
+        question = question.scalar()
+        from src.handlers.questions import send_question_to_user
+        await send_question_to_user(callback.bot, user, question)
+        # Если остались ещё — повторно показываем кнопку
+        if len(unanswered) > 1:
+            msg = get_message(UNANSWERED_QUESTIONS_MSG, user=user, count=len(unanswered)-1)
+            kb = types.InlineKeyboardMarkup(inline_keyboard=[[types.InlineKeyboardButton(text=get_message(BTN_LOAD_UNANSWERED, user=user), callback_data="load_unanswered")]])
+            await callback.message.answer(msg, reply_markup=kb, parse_mode="HTML")
     await callback.answer()
 
 # --- Helper functions ---
@@ -262,7 +335,7 @@ async def show_question_with_selected_button(callback, question, user, value, cr
     is_creator = (user.id == creator_user_id)
     if value not in ANSWER_VALUE_TO_EMOJI:
         logging.error(f"[show_question_with_selected_button] Unknown value: {value}")
-        await callback.answer("Internal error: unknown answer value.", show_alert=True)
+        await callback.answer(get_message(QUESTION_INTERNAL_ERROR, user=user, show_alert=True))
         return
     row = [types.InlineKeyboardButton(text=ANSWER_VALUE_TO_EMOJI[value], callback_data=f"answer_{question.id}_{value}")]
     if is_author or is_creator:
@@ -308,6 +381,14 @@ async def send_question_to_user(bot, user, question, creator_user_id=None, group
         text = f"<b>{group_name}</b>: {question.text}"
     else:
         text = question.text
+    # --- Создаём Answer со статусом delivered, если нет ---
+    async with AsyncSessionLocal() as session:
+        ans = await session.execute(select(Answer).where(and_(Answer.question_id == question.id, Answer.user_id == user.id)))
+        ans = ans.scalar()
+        if not ans:
+            ans = Answer(question_id=question.id, user_id=user.id, status='delivered')
+            session.add(ans)
+            await session.commit()
     answer_buttons = [types.InlineKeyboardButton(text=ANSWER_VALUE_TO_EMOJI[val], callback_data=f"answer_{question.id}_{val}") for val, emoji in ANSWER_VALUES]
     keyboard = [answer_buttons]
     if is_author or is_creator:

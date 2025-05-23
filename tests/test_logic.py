@@ -36,7 +36,7 @@ async def create_question(session, group, author, text):
     return q
 
 async def answer_question(session, user, question, value):
-    ans = Answer(question_id=question.id, user_id=user.id, value=value, is_skipped=int(value == 0))
+    ans = Answer(question_id=question.id, user_id=user.id, value=value)
     session.add(ans)
     await session.commit()
     return ans
@@ -230,18 +230,16 @@ async def test_reanswer_question(async_session):
     ans1 = await answer_question(async_session, user, q, 1)
     # Переответ (смена на skip)
     ans1.value = 0
-    ans1.is_skipped = 1
     await async_session.commit()
     updated = await async_session.execute(select(Answer).where(Answer.id == ans1.id))
     updated = updated.scalar()
-    assert updated.value == 0 and updated.is_skipped == 1
+    assert updated.value == 0
     # Переответ обратно
     updated.value = 2
-    updated.is_skipped = 0
     await async_session.commit()
     again = await async_session.execute(select(Answer).where(Answer.id == ans1.id))
     again = again.scalar()
-    assert again.value == 2 and again.is_skipped == 0
+    assert again.value == 2
 
 async def test_load_answered_questions_pagination(async_session):
     user = await create_user(async_session, 2003)
@@ -398,7 +396,8 @@ async def test_instructions_command(monkeypatch):
             self.bot = self
             self.deleted = []
             self.sent = []
-        async def answer(self, text, parse_mode=None):
+            self.from_user = pytypes.SimpleNamespace(id=111, language='en')
+        async def answer(self, text, parse_mode=None, **kwargs):
             self.sent.append(text)
             # эмулируем message_id
             return pytypes.SimpleNamespace(message_id=len(self.sent))
@@ -431,7 +430,7 @@ async def test_mygroups_command(monkeypatch):
             self.bot = self
             self.deleted = []
             self.sent = []
-            self.from_user = pytypes.SimpleNamespace(id=111)
+            self.from_user = pytypes.SimpleNamespace(id=111, language='en')
         async def answer(self, text, **kwargs):
             self.sent.append(text)
             # эмулируем message_id

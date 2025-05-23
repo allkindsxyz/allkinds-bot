@@ -137,7 +137,7 @@ async def show_user_groups(message, user_id, state):
             if is_creator:
                 kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="Create a new group", callback_data="create_new_group")], [InlineKeyboardButton(text="Join another group with code", callback_data="join_another_group_with_code")]])
             else:
-                kb = get_user_keyboard()
+                kb = get_user_keyboard(user)
             await message.answer("You are not in any groups.", reply_markup=kb)
             return
         current_group = None
@@ -151,7 +151,7 @@ async def show_user_groups(message, user_id, state):
         deeplink = f"https://t.me/{bot_info.username}?start={current_group.invite_code}"
         text = f"You are in <b>{current_group.name}</b>\n{current_group.description}\n\nInvite link: {deeplink}\nInvite code: <code>{current_group.invite_code}</code>"
         is_creator = (current_group.creator_user_id == user.id)
-        kb = get_group_main_keyboard(user.id, current_group.id, current_group.name, is_creator)
+        kb = get_group_main_keyboard(user.id, current_group.id, current_group.name, is_creator, user)
         kb.inline_keyboard.append([])
         other_groups = [g for g in groups if g.id != current_group.id]
         for g in other_groups:

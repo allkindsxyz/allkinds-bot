@@ -1,5 +1,6 @@
 # Генерация клавиатур для вопросов и ответов 
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
+from src.texts.messages import QUESTION_DELETE, QUESTION_LOAD_MORE
 
 ANSWER_VALUES = [(-2, "👎👎"), (-1, "👎"), (0, "⏭️"), (1, "👍"), (2, "👍👍")]
 ANSWER_VALUE_TO_EMOJI = dict(ANSWER_VALUES)
@@ -12,7 +13,7 @@ def get_answer_keyboard(question_id, is_author=False, is_creator=False):
     return InlineKeyboardMarkup(inline_keyboard=keyboard)
 
 def get_delete_keyboard(question_id):
-    return InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="Delete", callback_data=f"delete_question_{question_id}")]])
+    return InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text=QUESTION_DELETE, callback_data=f"delete_question_{question_id}")]])
 
 def get_load_more_keyboard(page):
-    return InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="Load more", callback_data=f"load_answered_questions_more_{page}")]]) 
+    return InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text=QUESTION_LOAD_MORE, callback_data=f"load_answered_questions_more_{page}")]]) 

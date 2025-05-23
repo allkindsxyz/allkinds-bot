@@ -12,7 +12,7 @@ async def get_next_unanswered_question(session, group_id, user_id):
     for question in questions:
         ans = await session.execute(select(Answer).where(and_(Answer.question_id == question.id, Answer.user_id == user_id)))
         ans = ans.scalar()
-        if not ans or ans.value is None:
+        if not ans:
             return question
     return None
 
