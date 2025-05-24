@@ -15,5 +15,10 @@ def get_answer_keyboard(question_id, is_author=False, is_creator=False):
 def get_delete_keyboard(question_id):
     return InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text=QUESTION_DELETE, callback_data=f"delete_question_{question_id}")]])
 
-def get_load_more_keyboard(page):
-    return InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text=QUESTION_LOAD_MORE, callback_data=f"load_answered_questions_more_{page}")]]) 
+def get_load_more_keyboard(page, user):
+    from src.texts.messages import get_message, QUESTION_LOAD_MORE
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text=get_message(QUESTION_LOAD_MORE, user), callback_data=f"load_answered_questions_more_{page}")]
+        ]
+    ) 
