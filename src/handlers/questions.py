@@ -213,20 +213,21 @@ async def cb_load_answered_questions(callback: types.CallbackQuery, state: FSMCo
         user = await session.execute(select(User).where(User.telegram_user_id == user_id))
         user = user.scalar()
         group_id = user.current_group_id
+        print(f"[DEBUG] cb_load_answered_questions: user_id={user_id}, group_id={group_id}, user={user}")
         group_obj = await session.execute(select(Group).where(Group.id == group_id))
         group_obj = group_obj.scalar()
         group_name = group_obj.name if group_obj else None
         memberships = await session.execute(select(GroupMember).where(GroupMember.user_id == user.id))
         memberships = memberships.scalars().all()
         all_groups_count = len(memberships)
-        answers = await session.execute(
-            select(Answer).where(
-                Answer.user_id == user.id,
-                Answer.value.isnot(None),
-                Answer.question_id.in_(select(Question.id).where(Question.group_id == group_id, Question.is_deleted == 0))
-            ).order_by(Answer.created_at).limit(ANSWERED_PAGE_SIZE)
-        )
+        answers_query = select(Answer).where(
+            Answer.user_id == user.id,
+            Answer.value.isnot(None),
+            Answer.question_id.in_(select(Question.id).where(Question.group_id == group_id, Question.is_deleted == 0))
+        ).order_by(Answer.created_at)
+        answers = await session.execute(answers_query.limit(ANSWERED_PAGE_SIZE))
         answers = answers.scalars().all()
+        print(f"[DEBUG] cb_load_answered_questions: answers_ids={[a.id for a in answers]}")
         if not answers:
             await callback.answer(get_message(QUESTION_NO_ANSWERED, user=user, show_alert=True))
             return
@@ -234,60 +235,93 @@ async def cb_load_answered_questions(callback: types.CallbackQuery, state: FSMCo
             question = await session.execute(select(Question).where(Question.id == ans.question_id))
             question = question.scalar()
             await send_answered_question_to_user(callback.bot, user, question, ans.value, group_name=group_name, all_groups_count=all_groups_count)
-        total_count = await session.execute(
-            select(Answer).where(
-                Answer.user_id == user.id,
-                Answer.value.isnot(None),
-                Answer.question_id.in_(select(Question.id).where(Question.group_id == group_id, Question.is_deleted == 0))
-            )
+        total_count_query = select(Answer).where(
+            Answer.user_id == user.id,
+            Answer.value.isnot(None),
+            Answer.question_id.in_(select(Question.id).where(Question.group_id == group_id, Question.is_deleted == 0))
         )
+        total_count = await session.execute(total_count_query)
         total_count = len(total_count.scalars().all())
+        print(f"[DEBUG] cb_load_answered_questions: total_count={total_count}, page=0, offset={ANSWERED_PAGE_SIZE}")
+        # Логируем id всех questions
+        questions_query = select(Question).where(Question.group_id == group_id, Question.is_deleted == 0)
+        questions = await session.execute(questions_query)
+        questions = questions.scalars().all()
+        print(f"[DEBUG] cb_load_answered_questions: questions_ids={[q.id for q in questions]}")
         if total_count > ANSWERED_PAGE_SIZE:
-            kb = get_load_more_keyboard(1)
-            await callback.message.answer(get_message(QUESTION_MORE_ANSWERED, user=user, reply_markup=kb))
+            kb = get_load_more_keyboard(1, user)
+            print(f"[DEBUG] cb_load_answered_questions: sending load more button, reply_markup={kb}")
+            await callback.message.answer(get_message(QUESTION_MORE_ANSWERED, user=user), reply_markup=kb)
     await callback.answer()
 
 @router.callback_query(F.data.startswith("load_answered_questions_more_"))
 async def cb_load_answered_questions_more(callback: types.CallbackQuery, state: FSMContext):
+    print(f"[DEBUG] cb_load_answered_questions_more: callback.data={callback.data}")
     user_id = callback.from_user.id
-    page = int(callback.data.split("_")[-1])
-    offset = (page + 1) * ANSWERED_PAGE_SIZE
+    try:
+        page = int(callback.data.split("_")[-1])
+    except Exception as e:
+        print(f"[ERROR] Failed to parse page from callback.data: {callback.data}, error: {e}")
+        await callback.answer("Internal error: invalid page.", show_alert=True)
+        return
+    offset = page * ANSWERED_PAGE_SIZE
     async with AsyncSessionLocal() as session:
         user = await session.execute(select(User).where(User.telegram_user_id == user_id))
         user = user.scalar()
         group_id = user.current_group_id
+        print(f"[DEBUG] cb_load_answered_questions_more: user_id={user_id}, group_id={group_id}, user={user}")
         group_obj = await session.execute(select(Group).where(Group.id == group_id))
         group_obj = group_obj.scalar()
         group_name = group_obj.name if group_obj else None
         memberships = await session.execute(select(GroupMember).where(GroupMember.user_id == user.id))
         memberships = memberships.scalars().all()
         all_groups_count = len(memberships)
-        answers = await session.execute(
-            select(Answer).where(
-                Answer.user_id == user.id,
-                Answer.value.isnot(None),
-                Answer.question_id.in_(select(Question.id).where(Question.group_id == group_id, Question.is_deleted == 0))
-            ).order_by(Answer.created_at).offset(offset).limit(ANSWERED_PAGE_SIZE)
-        )
+        answers_query = select(Answer).where(
+            Answer.user_id == user.id,
+            Answer.value.isnot(None),
+            Answer.question_id.in_(select(Question.id).where(Question.group_id == group_id, Question.is_deleted == 0))
+        ).order_by(Answer.created_at).offset(offset).limit(ANSWERED_PAGE_SIZE)
+        answers = await session.execute(answers_query)
         answers = answers.scalars().all()
+        print(f"[DEBUG] cb_load_answered_questions_more: answers_ids={[a.id for a in answers]}, offset={offset}")
         if not answers:
+            print(f"[DEBUG] No more answers to load for user_id={user_id}, group_id={group_id}")
+            try:
+                await callback.message.edit_reply_markup(reply_markup=None)
+            except Exception as e:
+                print(f"[ERROR] Failed to remove inline keyboard: {e}")
             await callback.answer(get_message(QUESTION_NO_MORE_ANSWERED, user=user, show_alert=True))
             return
         for ans in answers:
             question = await session.execute(select(Question).where(Question.id == ans.question_id))
             question = question.scalar()
             await send_answered_question_to_user(callback.bot, user, question, ans.value, group_name=group_name, all_groups_count=all_groups_count)
-        total_count = await session.execute(
-            select(Answer).where(
-                Answer.user_id == user.id,
-                Answer.value.isnot(None),
-                Answer.question_id.in_(select(Question.id).where(Question.group_id == group_id, Question.is_deleted == 0))
-            )
+        total_count_query = select(Answer).where(
+            Answer.user_id == user.id,
+            Answer.value.isnot(None),
+            Answer.question_id.in_(select(Question.id).where(Question.group_id == group_id, Question.is_deleted == 0))
         )
+        total_count = await session.execute(total_count_query)
         total_count = len(total_count.scalars().all())
-        if total_count > offset + ANSWERED_PAGE_SIZE:
-            kb = get_load_more_keyboard(page+1)
-            await callback.message.answer(get_message(QUESTION_MORE_ANSWERED, user=user, reply_markup=kb))
+        print(f"[DEBUG] cb_load_answered_questions_more: total_count={total_count}, page={page}, offset={offset}")
+        # Логируем id всех questions
+        questions_query = select(Question).where(Question.group_id == group_id, Question.is_deleted == 0)
+        questions = await session.execute(questions_query)
+        questions = questions.scalars().all()
+        print(f"[DEBUG] cb_load_answered_questions_more: questions_ids={[q.id for q in questions]}")
+        if total_count > offset:
+            # Если после этой страницы ещё останутся вопросы — показываем кнопку
+            if offset + ANSWERED_PAGE_SIZE < total_count:
+                kb = get_load_more_keyboard(page+1, user)
+                print(f"[DEBUG] cb_load_answered_questions_more: sending load more button, reply_markup={kb}")
+                await callback.message.answer(get_message(QUESTION_MORE_ANSWERED, user=user), reply_markup=kb)
+        else:
+            # Все вопросы загружены — удаляем кнопку
+            try:
+                await callback.message.edit_reply_markup(reply_markup=None)
+            except Exception as e:
+                print(f"[ERROR] Failed to remove inline keyboard (final): {e}")
+            await callback.message.answer(get_message(QUESTION_NO_MORE_ANSWERED, user=user))
     await callback.answer()
 
 @router.callback_query(F.data == "load_unanswered")
