@@ -127,7 +127,15 @@ async def cb_answer_question(callback: types.CallbackQuery, state: FSMContext):
         creator_user_id = group_obj.creator_user_id if group_obj else None
         ans = await session.execute(select(Answer).where(and_(Answer.question_id == qid, Answer.user_id == user.id)))
         ans = ans.scalar()
-        # Любой клик по кнопке (даже если выбран тот же вариант) — всегда записываем ответ и скрываем остальные кнопки
+        # --- Новый UX: двухшаговый переответ ---
+        if ans and ans.status == 'answered' and ans.value == value:
+            # Первый клик по уже выбранному ответу — переводим в delivered, показываем все кнопки
+            ans.status = 'delivered'
+            await session.commit()
+            await show_question_with_all_buttons(callback, question, user, creator_user_id)
+            await callback.answer(get_message(QUESTION_CAN_CHANGE_ANSWER, user=user))
+            return
+        # Любой другой клик (или delivered) — сохраняем ответ и скрываем остальные кнопки
         if not ans:
             ans = Answer(question_id=qid, user_id=user.id, status='answered', value=value)
             session.add(ans)
@@ -142,12 +150,10 @@ async def cb_answer_question(callback: types.CallbackQuery, state: FSMContext):
         await show_question_with_selected_button(callback, question, user, value, creator_user_id)
         await callback.answer(get_message(QUESTION_ANSWER_SAVED, user=user))
         # --- Следующий вопрос из очереди ---
-        # 1. Ищем вопросы, которых нет в answers (не доставленные)
         next_q = await get_next_unanswered_question(session, question.group_id, user.id)
         if next_q:
             await send_question_to_user(bot, user, next_q, creator_user_id)
         else:
-            # 2. Если нет новых, ищем delivered без ответа
             unanswered = await session.execute(
                 select(Answer).where(
                     Answer.user_id == user.id,
