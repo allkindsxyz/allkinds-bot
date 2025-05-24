@@ -455,4 +455,30 @@ async def test_mygroups_command(monkeypatch):
     await my_groups(message, state)
     assert message.deleted == [1]
     assert len(message.sent) == 2
-    assert state_data["my_groups_msg_ids"] == [2] 
+    assert state_data["my_groups_msg_ids"] == [2]
+
+@pytest.mark.asyncio
+async def test_answered_questions_load_more_button(async_session):
+    """Проверяет, что кнопка 'Загрузить ещё' появляется и исчезает корректно при пагинации отвеченных вопросов."""
+    user = await create_user(async_session, 9001)
+    group, _ = await create_group(async_session, user, "GLoadMore", "Desc")
+    # Создаём 25 вопросов и ответов
+    questions = [await create_question(async_session, group, user, f"Q{i}?") for i in range(25)]
+    for i, q in enumerate(questions):
+        await answer_question(async_session, user, q, (i % 5) - 2)
+    # Проверяем первую страницу (10)
+    page1 = await async_session.execute(select(Answer).where(Answer.user_id == user.id, Answer.value.isnot(None)).order_by(Answer.created_at).limit(10))
+    page1 = page1.scalars().all()
+    assert len(page1) == 10
+    # Проверяем вторую страницу (10)
+    page2 = await async_session.execute(select(Answer).where(Answer.user_id == user.id, Answer.value.isnot(None)).order_by(Answer.created_at).offset(10).limit(10))
+    page2 = page2.scalars().all()
+    assert len(page2) == 10
+    # Проверяем третью страницу (5)
+    page3 = await async_session.execute(select(Answer).where(Answer.user_id == user.id, Answer.value.isnot(None)).order_by(Answer.created_at).offset(20).limit(10))
+    page3 = page3.scalars().all()
+    assert len(page3) == 5
+    # Проверяем, что после третьей страницы больше нет ответов
+    page4 = await async_session.execute(select(Answer).where(Answer.user_id == user.id, Answer.value.isnot(None)).order_by(Answer.created_at).offset(30).limit(10))
+    page4 = page4.scalars().all()
+    assert len(page4) == 0 
