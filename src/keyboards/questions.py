@@ -2,7 +2,7 @@
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 from src.texts.messages import QUESTION_DELETE, QUESTION_LOAD_MORE
 
-ANSWER_VALUES = [(-2, "👎👎"), (-1, "👎"), (0, "⏩"), (1, "👍"), (2, "👍👍")]
+ANSWER_VALUES = [(-2, "620"), (-1, "641"), (0, "914"), (1, "642"), (2, "60d")]
 ANSWER_VALUE_TO_EMOJI = dict(ANSWER_VALUES)
 
 def get_answer_keyboard(question_id, is_author=False, is_creator=False):
