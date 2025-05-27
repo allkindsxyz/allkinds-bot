@@ -34,14 +34,14 @@ async def handle_new_question(message: types.Message, state: FSMContext):
     import asyncio
     text = message.text.strip()
     async with AsyncSessionLocal() as session:
-        user = await session.execute(select(User).where(User.telegram_user_id == message.from_user.id))
+        user = await session.execute(select(User).where(User.id == message.from_user.id))
         user = user.scalar()
     if len(text) < 5:
         await message.answer(get_message(QUESTION_TOO_SHORT, user=user))
         return
     user_id = message.from_user.id
     async with AsyncSessionLocal() as session:
-        user = await session.execute(select(User).where(User.telegram_user_id == user_id))
+        user = await session.execute(select(User).where(User.id == user_id))
         user = user.scalar()
         if not user or not user.current_group_id:
             await message.answer(get_message(QUESTION_MUST_JOIN_GROUP, user=user))
@@ -100,7 +100,7 @@ async def cb_answer_question(callback: types.CallbackQuery, state: FSMContext):
     except Exception:
         logging.error(f"[cb_answer_question] Invalid answer value (not int): {parts[2]}")
         async with AsyncSessionLocal() as session:
-            user = await session.execute(select(User).where(User.telegram_user_id == callback.from_user.id))
+            user = await session.execute(select(User).where(User.id == callback.from_user.id))
             user = user.scalar()
         await callback.answer(get_message(QUESTION_INTERNAL_ERROR, user=user, show_alert=True))
         return
@@ -109,12 +109,12 @@ async def cb_answer_question(callback: types.CallbackQuery, state: FSMContext):
     if value not in allowed_values:
         logging.error(f"[cb_answer_question] Invalid answer value: {value}")
         async with AsyncSessionLocal() as session:
-            user = await session.execute(select(User).where(User.telegram_user_id == callback.from_user.id))
+            user = await session.execute(select(User).where(User.id == callback.from_user.id))
             user = user.scalar()
         await callback.answer(get_message(QUESTION_INTERNAL_ERROR, user=user, show_alert=True))
         return
     async with AsyncSessionLocal() as session:
-        user = await session.execute(select(User).where(User.telegram_user_id == user_id))
+        user = await session.execute(select(User).where(User.id == user_id))
         user = user.scalar()
         question = await session.execute(select(Question).where(Question.id == qid, Question.is_deleted == 0))
         question = question.scalar()
@@ -173,7 +173,7 @@ async def cb_delete_question(callback: types.CallbackQuery, state: FSMContext):
     qid = int(callback.data.split("_")[-1])
     user_id = callback.from_user.id
     async with AsyncSessionLocal() as session:
-        user = await session.execute(select(User).where(User.telegram_user_id == user_id))
+        user = await session.execute(select(User).where(User.id == user_id))
         user = user.scalar()
         question = await session.execute(select(Question).where(Question.id == qid, Question.is_deleted == 0))
         question = question.scalar()
@@ -189,9 +189,9 @@ async def cb_delete_question(callback: types.CallbackQuery, state: FSMContext):
         creator = creator.scalar() if creator else None
         allowed_telegram_ids = set()
         if author:
-            allowed_telegram_ids.add(author.telegram_user_id)
+            allowed_telegram_ids.add(author.id)
         if creator:
-            allowed_telegram_ids.add(creator.telegram_user_id)
+            allowed_telegram_ids.add(creator.id)
         if user_id not in allowed_telegram_ids:
             await callback.answer(get_message(QUESTION_ONLY_AUTHOR_OR_CREATOR, user=user, show_alert=True))
             return
@@ -210,7 +210,7 @@ ANSWERED_PAGE_SIZE = 10
 async def cb_load_answered_questions(callback: types.CallbackQuery, state: FSMContext):
     user_id = callback.from_user.id
     async with AsyncSessionLocal() as session:
-        user = await session.execute(select(User).where(User.telegram_user_id == user_id))
+        user = await session.execute(select(User).where(User.id == user_id))
         user = user.scalar()
         group_id = user.current_group_id
         print(f"[DEBUG] cb_load_answered_questions: user_id={user_id}, group_id={group_id}, user={user}")
@@ -266,7 +266,7 @@ async def cb_load_answered_questions_more(callback: types.CallbackQuery, state: 
         return
     offset = page * ANSWERED_PAGE_SIZE
     async with AsyncSessionLocal() as session:
-        user = await session.execute(select(User).where(User.telegram_user_id == user_id))
+        user = await session.execute(select(User).where(User.id == user_id))
         user = user.scalar()
         group_id = user.current_group_id
         print(f"[DEBUG] cb_load_answered_questions_more: user_id={user_id}, group_id={group_id}, user={user}")
@@ -328,7 +328,7 @@ async def cb_load_answered_questions_more(callback: types.CallbackQuery, state: 
 async def cb_load_unanswered(callback: types.CallbackQuery, state: FSMContext):
     user_id = callback.from_user.id
     async with AsyncSessionLocal() as session:
-        user = await session.execute(select(User).where(User.telegram_user_id == user_id))
+        user = await session.execute(select(User).where(User.id == user_id))
         user = user.scalar()
         unanswered = await session.execute(
             select(Answer).where(
@@ -436,7 +436,7 @@ async def send_question_to_user(bot, user, question, creator_user_id=None, group
     if is_author or is_creator:
         keyboard.append([types.InlineKeyboardButton(text="Delete", callback_data=f"delete_question_{question.id}")])
     kb = types.InlineKeyboardMarkup(inline_keyboard=keyboard)
-    await bot.send_message(user.telegram_user_id, text, reply_markup=kb, parse_mode="HTML")
+    await bot.send_message(user.id, text, reply_markup=kb, parse_mode="HTML")
 
 async def send_answered_question_to_user(bot, user, question, value, group_name=None, all_groups_count=None):
     if group_name is None or all_groups_count is None:
@@ -461,4 +461,4 @@ async def send_answered_question_to_user(bot, user, question, value, group_name=
     if is_author or is_creator:
         row.append(types.InlineKeyboardButton(text="Delete", callback_data=f"delete_question_{question.id}"))
     kb = types.InlineKeyboardMarkup(inline_keyboard=[row])
-    await bot.send_message(user.telegram_user_id, text, reply_markup=kb, parse_mode="HTML") 
+    await bot.send_message(user.id, text, reply_markup=kb, parse_mode="HTML") 

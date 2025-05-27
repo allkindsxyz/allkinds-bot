@@ -40,13 +40,12 @@ async def instructions(message: types.Message, state: FSMContext):
         await hide_instructions_and_mygroups_by_message(message, state)
         # Получаем user из БД для актуального языка
         async with AsyncSessionLocal() as session:
-            user = await session.execute(select(User).where(User.telegram_user_id == message.from_user.id))
+            user = await session.execute(select(User).where(User.id == message.from_user.id))
             user = user.scalar()
         msg = await message.answer(get_message(INSTRUCTIONS_TEXT, user or message.from_user), parse_mode="HTML")
         await state.update_data(instructions_msg_id=msg.message_id)
     except Exception as e:
-        logging.exception("Ошибка в хендлере /instructions")
-        raise
+        logging.exception(f"Ошибка в хендлере /instructions: {e}")
 
 @router.message(Command("mygroups"))
 async def my_groups(message: types.Message, state: FSMContext):
@@ -56,14 +55,13 @@ async def my_groups(message: types.Message, state: FSMContext):
         await hide_instructions_and_mygroups_by_message(message, state)
         # Получаем user из БД для актуального языка
         async with AsyncSessionLocal() as session:
-            user = await session.execute(select(User).where(User.telegram_user_id == message.from_user.id))
+            user = await session.execute(select(User).where(User.id == message.from_user.id))
             user = user.scalar()
         from src.handlers.groups import show_user_groups
         # Передаём user только в get_message и генераторы клавиатур, не патчим message.from_user
-        await show_user_groups(message, state)
+        await show_user_groups(message, state, user)
     except Exception as e:
-        logging.exception("Ошибка в хендлере /mygroups")
-        raise
+        logging.exception(f"Ошибка в хендлере /mygroups: {e}")
 
 def normalize_lang(lang_code):
     if not lang_code:
@@ -79,11 +77,11 @@ async def start(message: types.Message, state: FSMContext):
         user_id = message.from_user.id
         # Получаем user из БД или создаём
         async with AsyncSessionLocal() as session:
-            user = await session.execute(select(User).where(User.telegram_user_id == user_id))
+            user = await session.execute(select(User).where(User.id == user_id))
             user = user.scalar()
             if user is None:
                 user_lang = normalize_lang(getattr(message.from_user, 'language_code', None))
-                user = User(telegram_user_id=user_id, language=user_lang)
+                user = User(id=user_id, language=user_lang)
                 session.add(user)
                 await session.commit()
                 await session.refresh(user)
@@ -95,7 +93,7 @@ async def start(message: types.Message, state: FSMContext):
             print(f"[DEBUG] Trying join_group_by_code_service with code={code}")
             group = await join_group_by_code_service(user_id, code)
             async with AsyncSessionLocal() as session:
-                user = await session.execute(select(User).where(User.telegram_user_id == user_id))
+                user = await session.execute(select(User).where(User.id == user_id))
                 user = user.scalar()
             if not group:
                 await message.answer(get_message("❌ Group not found. Check the invite code.", user), reply_markup=types.ReplyKeyboardRemove())
@@ -114,7 +112,7 @@ async def start(message: types.Message, state: FSMContext):
         groups = await get_user_groups(user_id)
         is_creator = await is_group_creator(user_id)
         async with AsyncSessionLocal() as session:
-            user = await session.execute(select(User).where(User.telegram_user_id == user_id))
+            user = await session.execute(select(User).where(User.id == user_id))
             user = user.scalar()
             memberships = await session.execute(select(GroupMember).where(GroupMember.user_id == user.id))
             memberships = memberships.scalars().all()
@@ -167,14 +165,14 @@ async def set_language(callback: types.CallbackQuery, state: FSMContext):
     if lang not in ("en", "ru"):
         lang = "en"
     async with AsyncSessionLocal() as session:
-        user = await session.execute(select(User).where(User.telegram_user_id == callback.from_user.id))
+        user = await session.execute(select(User).where(User.id == callback.from_user.id))
         user = user.scalar()
         if user:
             user.language = lang
             await session.commit()
     # Повторно получаем user с обновлённым языком
     async with AsyncSessionLocal() as session:
-        user = await session.execute(select(User).where(User.telegram_user_id == callback.from_user.id))
+        user = await session.execute(select(User).where(User.id == callback.from_user.id))
         user = user.scalar()
     # Подтверждение на выбранном языке
     await callback.message.answer(get_message("INSTRUCTIONS_TEXT", user), parse_mode="HTML")

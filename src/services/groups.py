@@ -13,10 +13,10 @@ ADMIN_USER_ID = int(os.getenv('ADMIN_USER_ID', 0))
 async def ensure_admin_in_db() -> None:
     """Ensure the admin user and creator record exist in the DB."""
     async with AsyncSessionLocal() as session:
-        user = await session.execute(select(User).where(User.telegram_user_id == ADMIN_USER_ID))
+        user = await session.execute(select(User).where(User.id == ADMIN_USER_ID))
         user = user.scalar()
         if not user:
-            user = User(telegram_user_id=ADMIN_USER_ID)
+            user = User(id=ADMIN_USER_ID)
             session.add(user)
             await session.flush()
         creator = await session.execute(select(GroupCreator).where(GroupCreator.user_id == user.id))
@@ -28,7 +28,7 @@ async def ensure_admin_in_db() -> None:
 async def is_group_creator(user_id: int) -> bool:
     """Check if user is a group creator."""
     async with AsyncSessionLocal() as session:
-        user = await session.execute(select(User).where(User.telegram_user_id == user_id))
+        user = await session.execute(select(User).where(User.id == user_id))
         user = user.scalar()
         if not user:
             return False
@@ -39,7 +39,7 @@ async def get_user_groups(user_id: int) -> List[Dict[str, Any]]:
     """Get all groups for a user."""
     async with AsyncSessionLocal() as session:
         result = await session.execute(
-            select(Group).join(GroupMember).join(User).where(User.telegram_user_id == user_id)
+            select(Group).join(GroupMember).join(User).where(User.id == user_id)
         )
         groups = result.scalars().all()
         logging.info(f"[get_user_groups] user_id={user_id}, groups={[g.name for g in groups]}")
@@ -50,7 +50,7 @@ async def is_onboarded(user_id: int, group_id: int) -> bool:
     async with AsyncSessionLocal() as session:
         result = await session.execute(
             select(GroupMember).join(User).where(
-                User.telegram_user_id == user_id,
+                User.id == user_id,
                 GroupMember.group_id == group_id,
                 GroupMember.nickname.isnot(None),
                 GroupMember.photo_url.isnot(None),
@@ -64,7 +64,7 @@ async def get_group_balance(user_id: int, group_id: int) -> int:
     async with AsyncSessionLocal() as session:
         result = await session.execute(
             select(GroupMember.balance).join(User).where(
-                User.telegram_user_id == user_id,
+                User.id == user_id,
                 GroupMember.group_id == group_id
             )
         )
@@ -82,8 +82,6 @@ async def get_group_members(group_id: int) -> List[Dict[str, Any]]:
             onboarded = bool(gm.nickname and gm.photo_url and (gm.geolocation_lat is not None or gm.city))
             members.append({
                 "user_id": user.id,
-                "telegram_user_id": user.telegram_user_id,
-                "nickname": gm.nickname,
                 "role": gm.role,
                 "onboarded": onboarded,
                 "balance": gm.balance
@@ -119,11 +117,11 @@ async def get_group_stats(group_id: int) -> Dict[str, Any]:
 async def get_group_onboarding_status(group_id: int) -> List[Dict[str, Any]]:
     """Return onboarding status for all group members."""
     members = await get_group_members(group_id)
-    return [{"telegram_user_id": m["telegram_user_id"], "onboarded": m["onboarded"]} for m in members]
+    return [{"onboarded": m["onboarded"]} for m in members]
 
 async def show_user_groups(message, user_id, state):
     async with AsyncSessionLocal() as session:
-        user = await session.execute(select(User).where(User.telegram_user_id == user_id))
+        user = await session.execute(select(User).where(User.id == user_id))
         user = user.scalar()
         if not user:
             await message.answer("You are not registered. Use /start.")
@@ -168,10 +166,10 @@ async def create_group_service(user_id: int, name: str, description: str) -> dic
     """Создать группу и вернуть её данные."""
     invite_code = await generate_unique_invite_code()
     async with AsyncSessionLocal() as session:
-        user = await session.execute(select(User).where(User.telegram_user_id == user_id))
+        user = await session.execute(select(User).where(User.id == user_id))
         user = user.scalar()
         if not user:
-            user = User(telegram_user_id=user_id)
+            user = User(id=user_id)
             session.add(user)
             await session.flush()
         group = Group(name=name, description=description, invite_code=invite_code, creator_user_id=user.id)
@@ -189,10 +187,10 @@ async def join_group_by_code_service(user_id: int, code: str) -> dict | None:
         group = group.scalar()
         if not group:
             return None
-        user = await session.execute(select(User).where(User.telegram_user_id == user_id))
+        user = await session.execute(select(User).where(User.id == user_id))
         user = user.scalar()
         if not user:
-            user = User(telegram_user_id=user_id)
+            user = User(id=user_id)
             session.add(user)
             await session.flush()
         member = await session.execute(select(GroupMember).where(GroupMember.user_id == user.id, GroupMember.group_id == group.id))
@@ -211,7 +209,7 @@ async def join_group_by_code_service(user_id: int, code: str) -> dict | None:
 async def switch_group_service(user_id: int, group_id: int) -> dict:
     """Сменить текущую группу пользователя. Вернуть статус и данные группы."""
     async with AsyncSessionLocal() as session:
-        user = await session.execute(select(User).where(User.telegram_user_id == user_id))
+        user = await session.execute(select(User).where(User.id == user_id))
         user = user.scalar()
         member = await session.execute(select(GroupMember).where(GroupMember.user_id == user.id, GroupMember.group_id == group_id))
         member = member.scalar()
@@ -243,7 +241,7 @@ async def delete_group_service(group_id: int) -> dict:
             user = await session.execute(select(User).where(User.id == member.user_id))
             user = user.scalar()
             if user and user.id != group.creator_user_id:
-                notify_users.append({"telegram_user_id": user.telegram_user_id, "group_name": group.name})
+                notify_users.append({"group_name": group.name})
         await session.commit()
         await session.execute(GroupMember.__table__.delete().where(GroupMember.group_id == group_id))
         await session.execute(Group.__table__.delete().where(Group.id == group_id))
@@ -253,7 +251,7 @@ async def delete_group_service(group_id: int) -> dict:
 async def leave_group_service(user_id: int, group_id: int) -> dict:
     """Покинуть группу. Вернуть статус и список оставшихся групп."""
     async with AsyncSessionLocal() as session:
-        user = await session.execute(select(User).where(User.telegram_user_id == user_id))
+        user = await session.execute(select(User).where(User.id == user_id))
         user = user.scalar()
         await session.execute(
             GroupMember.__table__.delete().where(GroupMember.user_id == user.id, GroupMember.group_id == group_id)
@@ -275,7 +273,7 @@ async def find_best_match(user_id: int, group_id: int, exclude_user_ids: list[in
     """Найти лучшего мэтча для пользователя в группе по максимальному совпадению ответов, исключая hidden/postponed. Similarity: 1 - (Σ|A_i-B_i|)/(4*N)."""
     exclude_user_ids = exclude_user_ids or []
     async with AsyncSessionLocal() as session:
-        user = await session.execute(select(User).where(User.telegram_user_id == user_id))
+        user = await session.execute(select(User).where(User.id == user_id))
         user = user.scalar()
         if not user:
             return None
@@ -346,15 +344,14 @@ async def find_best_match(user_id: int, group_id: int, exclude_user_ids: list[in
                 "photo_url": best_match.photo_url,
                 "similarity": best_score,
                 "common_questions": best_common_questions,
-                "valid_users_count": valid_users_count,
-                "telegram_user_id": match_user.telegram_user_id if match_user else None
+                "valid_users_count": valid_users_count
             }
         return None
 
 async def set_match_status(user_id: int, group_id: int, match_user_id: int, status: str):
     """Установить статус мэтча ('hidden' или 'postponed')."""
     async with AsyncSessionLocal() as session:
-        user = await session.execute(select(User).where(User.telegram_user_id == user_id))
+        user = await session.execute(select(User).where(User.id == user_id))
         user = user.scalar()
         if not user:
             return

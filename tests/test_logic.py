@@ -12,8 +12,8 @@ pytestmark = pytest.mark.asyncio
 def random_code():
     return ''.join(random.choices(string.ascii_uppercase + string.digits, k=5))
 
-async def create_user(session, telegram_user_id):
-    user = User(telegram_user_id=telegram_user_id)
+async def create_user(session, user_id):
+    user = User(id=user_id)
     session.add(user)
     await session.flush()
     return user
@@ -161,11 +161,11 @@ async def test_delete_group_removes_group_and_members(async_session):
 async def test_mygroups_logic(async_session):
     # Пользователь не зарегистрирован
     user_id = 1001
-    user = await async_session.execute(select(User).where(User.telegram_user_id == user_id))
+    user = await async_session.execute(select(User).where(User.id == user_id))
     assert user.scalar() is None
 
     # Регистрируем пользователя без групп
-    user = User(telegram_user_id=user_id)
+    user = User(id=user_id)
     async_session.add(user)
     await async_session.commit()
     groups = await async_session.execute(select(Group).join(GroupMember).where(GroupMember.user_id == user.id))
@@ -198,7 +198,7 @@ async def test_mygroups_logic(async_session):
 
     # Проверяем для админа
     admin_id = 1002
-    admin = User(telegram_user_id=admin_id)
+    admin = User(id=admin_id)
     async_session.add(admin)
     await async_session.flush()
     async_session.add(GroupCreator(user_id=admin.id))
@@ -438,7 +438,7 @@ async def test_mygroups_command(monkeypatch):
         async def delete_message(self, chat_id, msg_id):
             self.deleted.append(msg_id)
     # Мокаем show_user_groups чтобы оно отправляло сообщение и сохраняло message_id
-    async def fake_show_user_groups(message, state):
+    async def fake_show_user_groups(message, state, user):
         msg = await message.answer(f"Groups for {message.from_user.id}")
         data = await state.get_data()
         ids = data.get("my_groups_msg_ids", [])

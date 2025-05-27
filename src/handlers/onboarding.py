@@ -29,7 +29,7 @@ async def onboarding_nickname(message: types.Message, state: FSMContext):
     group_id = data.get("group_id")
     telegram_user_id = message.from_user.id
     async with AsyncSessionLocal() as session:
-        user = await session.execute(select(User).where(User.telegram_user_id == telegram_user_id))
+        user = await session.execute(select(User).where(User.id == telegram_user_id))
         user = user.scalar()
         if len(nickname) < 2:
             await message.answer(get_message("ONBOARDING_NICKNAME_TOO_SHORT", user or message.from_user))
@@ -52,7 +52,7 @@ async def onboarding_photo(message: types.Message, state: FSMContext):
     group_id = data.get("group_id")
     telegram_user_id = message.from_user.id
     async with AsyncSessionLocal() as session:
-        user = await session.execute(select(User).where(User.telegram_user_id == telegram_user_id))
+        user = await session.execute(select(User).where(User.id == telegram_user_id))
         user = user.scalar()
         if not group_id:
             await message.answer(get_message("ONBOARDING_INTERNAL_ERROR", user or message.from_user))
@@ -72,7 +72,7 @@ async def onboarding_location(message: types.Message, state: FSMContext):
     group_id = data.get("group_id")
     telegram_user_id = message.from_user.id
     async with AsyncSessionLocal() as session:
-        user = await session.execute(select(User).where(User.telegram_user_id == telegram_user_id))
+        user = await session.execute(select(User).where(User.id == telegram_user_id))
         user = user.scalar()
         if not group_id:
             await message.answer(get_message("ONBOARDING_INTERNAL_ERROR", user or message.from_user))
@@ -115,7 +115,7 @@ async def normalize_city_country(text: str):
 async def show_group_main_flow_after_onboarding(message, telegram_user_id, group_id):
     """После онбординга: показать первый вопрос или сообщение, а также кнопку Load answered questions только если есть ответы."""
     async with AsyncSessionLocal() as session:
-        user = await session.execute(select(User).where(User.telegram_user_id == telegram_user_id))
+        user = await session.execute(select(User).where(User.id == telegram_user_id))
         user = user.scalar()
         if not user:
             await message.answer(get_message("ONBOARDING_INTERNAL_ERROR", message.from_user))

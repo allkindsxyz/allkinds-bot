@@ -1,0 +1,916 @@
+Running tests...
+============================= test session starts ==============================
+platform darwin -- Python 3.13.2, pytest-8.3.5, pluggy-1.5.0
+rootdir: /Users/dk/Documents/AllkindsBot
+configfile: pytest.ini
+plugins: anyio-4.9.0, asyncio-0.26.0
+asyncio: mode=Mode.STRICT, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collected 19 items
+
+tests/test_logic.py FFFFFFFFFFFFFFFFFFF                                  [100%]
+
+=================================== FAILURES ===================================
+________________________ test_admin_auto_added_to_group ________________________
+
+async_session = <sqlalchemy.orm.session.AsyncSession object at 0x119c1a270>
+
+    async def test_admin_auto_added_to_group(async_session):
+>       user = await create_user(async_session, 111)
+
+tests/test_logic.py:45: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_logic.py:16: in create_user
+    user = User(telegram_user_id=telegram_user_id)
+<string>:4: in __init__
+    ???
+/Library/Frameworks/Python.framework/Versions/3.13/lib/python3.13/site-packages/sqlalchemy/orm/state.py:571: in _initialize_instance
+    with util.safe_reraise():
+/Library/Frameworks/Python.framework/Versions/3.13/lib/python3.13/site-packages/sqlalchemy/util/langhelpers.py:146: in __exit__
+    raise exc_value.with_traceback(exc_tb)
+/Library/Frameworks/Python.framework/Versions/3.13/lib/python3.13/site-packages/sqlalchemy/orm/state.py:569: in _initialize_instance
+    manager.original_init(*mixed[1:], **kwargs)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <src.models.User object at 0x119c1a120>
+kwargs = {'telegram_user_id': 111}, cls_ = <class 'src.models.User'>
+k = 'telegram_user_id'
+
+    def _declarative_constructor(self: Any, **kwargs: Any) -> None:
+        """A simple constructor that allows initialization from kwargs.
+    
+        Sets attributes on the constructed instance using the names and
+        values in ``kwargs``.
+    
+        Only keys that are present as
+        attributes of the instance's class are allowed. These could be,
+        for example, any mapped columns or relationships.
+        """
+        cls_ = type(self)
+        for k in kwargs:
+            if not hasattr(cls_, k):
+>               raise TypeError(
+                    "%r is an invalid keyword argument for %s" % (k, cls_.__name__)
+                )
+E               TypeError: 'telegram_user_id' is an invalid keyword argument for User
+
+/Library/Frameworks/Python.framework/Versions/3.13/lib/python3.13/site-packages/sqlalchemy/orm/decl_base.py:2175: TypeError
+---------------------------- Captured stdout setup -----------------------------
+TEST DB URL: postgresql+asyncpg://test:test@localhost:58448/test
+---------------------------- Captured stderr setup -----------------------------
+Pulling image testcontainers/ryuk:0.8.1
+Container started: f229f1ceae22
+Waiting for container <Container: f229f1ceae22> with image testcontainers/ryuk:0.8.1 to be ready ...
+Pulling image postgres:15
+Container started: afc2da624bbb
+Waiting for container <Container: afc2da624bbb> with image postgres:15 to be ready ...
+Waiting for container <Container: afc2da624bbb> with image postgres:15 to be ready ...
+------------------------------ Captured log setup ------------------------------
+INFO     testcontainers.core.container:container.py:98 Pulling image testcontainers/ryuk:0.8.1
+INFO     testcontainers.core.container:container.py:125 Container started: f229f1ceae22
+INFO     testcontainers.core.waiting_utils:waiting_utils.py:52 Waiting for container <Container: f229f1ceae22> with image testcontainers/ryuk:0.8.1 to be ready ...
+INFO     testcontainers.core.container:container.py:98 Pulling image postgres:15
+INFO     testcontainers.core.container:container.py:125 Container started: afc2da624bbb
+INFO     testcontainers.core.waiting_utils:waiting_utils.py:52 Waiting for container <Container: afc2da624bbb> with image postgres:15 to be ready ...
+INFO     testcontainers.core.waiting_utils:waiting_utils.py:52 Waiting for container <Container: afc2da624bbb> with image postgres:15 to be ready ...
+___________________________ test_join_group_by_code ____________________________
+
+async_session = <sqlalchemy.orm.session.AsyncSession object at 0x119c1a660>
+
+    async def test_join_group_by_code(async_session):
+>       admin = await create_user(async_session, 222)
+
+tests/test_logic.py:53: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_logic.py:16: in create_user
+    user = User(telegram_user_id=telegram_user_id)
+<string>:4: in __init__
+    ???
+/Library/Frameworks/Python.framework/Versions/3.13/lib/python3.13/site-packages/sqlalchemy/orm/state.py:571: in _initialize_instance
+    with util.safe_reraise():
+/Library/Frameworks/Python.framework/Versions/3.13/lib/python3.13/site-packages/sqlalchemy/util/langhelpers.py:146: in __exit__
+    raise exc_value.with_traceback(exc_tb)
+/Library/Frameworks/Python.framework/Versions/3.13/lib/python3.13/site-packages/sqlalchemy/orm/state.py:569: in _initialize_instance
+    manager.original_init(*mixed[1:], **kwargs)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <src.models.User object at 0x119ca7b10>
+kwargs = {'telegram_user_id': 222}, cls_ = <class 'src.models.User'>
+k = 'telegram_user_id'
+
+    def _declarative_constructor(self: Any, **kwargs: Any) -> None:
+        """A simple constructor that allows initialization from kwargs.
+    
+        Sets attributes on the constructed instance using the names and
+        values in ``kwargs``.
+    
+        Only keys that are present as
+        attributes of the instance's class are allowed. These could be,
+        for example, any mapped columns or relationships.
+        """
+        cls_ = type(self)
+        for k in kwargs:
+            if not hasattr(cls_, k):
+>               raise TypeError(
+                    "%r is an invalid keyword argument for %s" % (k, cls_.__name__)
+                )
+E               TypeError: 'telegram_user_id' is an invalid keyword argument for User
+
+/Library/Frameworks/Python.framework/Versions/3.13/lib/python3.13/site-packages/sqlalchemy/orm/decl_base.py:2175: TypeError
+___________________________ test_onboarding_profile ____________________________
+
+async_session = <sqlalchemy.orm.session.AsyncSession object at 0x119c1a7b0>
+
+    async def test_onboarding_profile(async_session):
+>       user = await create_user(async_session, 444)
+
+tests/test_logic.py:65: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_logic.py:16: in create_user
+    user = User(telegram_user_id=telegram_user_id)
+<string>:4: in __init__
+    ???
+/Library/Frameworks/Python.framework/Versions/3.13/lib/python3.13/site-packages/sqlalchemy/orm/state.py:571: in _initialize_instance
+    with util.safe_reraise():
+/Library/Frameworks/Python.framework/Versions/3.13/lib/python3.13/site-packages/sqlalchemy/util/langhelpers.py:146: in __exit__
+    raise exc_value.with_traceback(exc_tb)
+/Library/Frameworks/Python.framework/Versions/3.13/lib/python3.13/site-packages/sqlalchemy/orm/state.py:569: in _initialize_instance
+    manager.original_init(*mixed[1:], **kwargs)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <src.models.User object at 0x119ca7ed0>
+kwargs = {'telegram_user_id': 444}, cls_ = <class 'src.models.User'>
+k = 'telegram_user_id'
+
+    def _declarative_constructor(self: Any, **kwargs: Any) -> None:
+        """A simple constructor that allows initialization from kwargs.
+    
+        Sets attributes on the constructed instance using the names and
+        values in ``kwargs``.
+    
+        Only keys that are present as
+        attributes of the instance's class are allowed. These could be,
+        for example, any mapped columns or relationships.
+        """
+        cls_ = type(self)
+        for k in kwargs:
+            if not hasattr(cls_, k):
+>               raise TypeError(
+                    "%r is an invalid keyword argument for %s" % (k, cls_.__name__)
+                )
+E               TypeError: 'telegram_user_id' is an invalid keyword argument for User
+
+/Library/Frameworks/Python.framework/Versions/3.13/lib/python3.13/site-packages/sqlalchemy/orm/decl_base.py:2175: TypeError
+__________________________ test_admin_sees_own_groups __________________________
+
+async_session = <sqlalchemy.orm.session.AsyncSession object at 0x119c1a900>
+
+    async def test_admin_sees_own_groups(async_session):
+>       user = await create_user(async_session, 555)
+
+tests/test_logic.py:84: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_logic.py:16: in create_user
+    user = User(telegram_user_id=telegram_user_id)
+<string>:4: in __init__
+    ???
+/Library/Frameworks/Python.framework/Versions/3.13/lib/python3.13/site-packages/sqlalchemy/orm/state.py:571: in _initialize_instance
+    with util.safe_reraise():
+/Library/Frameworks/Python.framework/Versions/3.13/lib/python3.13/site-packages/sqlalchemy/util/langhelpers.py:146: in __exit__
+    raise exc_value.with_traceback(exc_tb)
+/Library/Frameworks/Python.framework/Versions/3.13/lib/python3.13/site-packages/sqlalchemy/orm/state.py:569: in _initialize_instance
+    manager.original_init(*mixed[1:], **kwargs)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <src.models.User object at 0x11e16da70>
+kwargs = {'telegram_user_id': 555}, cls_ = <class 'src.models.User'>
+k = 'telegram_user_id'
+
+    def _declarative_constructor(self: Any, **kwargs: Any) -> None:
+        """A simple constructor that allows initialization from kwargs.
+    
+        Sets attributes on the constructed instance using the names and
+        values in ``kwargs``.
+    
+        Only keys that are present as
+        attributes of the instance's class are allowed. These could be,
+        for example, any mapped columns or relationships.
+        """
+        cls_ = type(self)
+        for k in kwargs:
+            if not hasattr(cls_, k):
+>               raise TypeError(
+                    "%r is an invalid keyword argument for %s" % (k, cls_.__name__)
+                )
+E               TypeError: 'telegram_user_id' is an invalid keyword argument for User
+
+/Library/Frameworks/Python.framework/Versions/3.13/lib/python3.13/site-packages/sqlalchemy/orm/decl_base.py:2175: TypeError
+______________________ test_non_admin_cannot_create_group ______________________
+
+async_session = <sqlalchemy.orm.session.AsyncSession object at 0x119c1a660>
+
+    async def test_non_admin_cannot_create_group(async_session):
+>       user = await create_user(async_session, 666)
+
+tests/test_logic.py:95: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_logic.py:16: in create_user
+    user = User(telegram_user_id=telegram_user_id)
+<string>:4: in __init__
+    ???
+/Library/Frameworks/Python.framework/Versions/3.13/lib/python3.13/site-packages/sqlalchemy/orm/state.py:571: in _initialize_instance
+    with util.safe_reraise():
+/Library/Frameworks/Python.framework/Versions/3.13/lib/python3.13/site-packages/sqlalchemy/util/langhelpers.py:146: in __exit__
+    raise exc_value.with_traceback(exc_tb)
+/Library/Frameworks/Python.framework/Versions/3.13/lib/python3.13/site-packages/sqlalchemy/orm/state.py:569: in _initialize_instance
+    manager.original_init(*mixed[1:], **kwargs)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <src.models.User object at 0x11e16dcd0>
+kwargs = {'telegram_user_id': 666}, cls_ = <class 'src.models.User'>
+k = 'telegram_user_id'
+
+    def _declarative_constructor(self: Any, **kwargs: Any) -> None:
+        """A simple constructor that allows initialization from kwargs.
+    
+        Sets attributes on the constructed instance using the names and
+        values in ``kwargs``.
+    
+        Only keys that are present as
+        attributes of the instance's class are allowed. These could be,
+        for example, any mapped columns or relationships.
+        """
+        cls_ = type(self)
+        for k in kwargs:
+            if not hasattr(cls_, k):
+>               raise TypeError(
+                    "%r is an invalid keyword argument for %s" % (k, cls_.__name__)
+                )
+E               TypeError: 'telegram_user_id' is an invalid keyword argument for User
+
+/Library/Frameworks/Python.framework/Versions/3.13/lib/python3.13/site-packages/sqlalchemy/orm/decl_base.py:2175: TypeError
+_____________ test_leave_last_group_removes_membership_and_current _____________
+
+async_session = <sqlalchemy.orm.session.AsyncSession object at 0x119c19d30>
+
+    async def test_leave_last_group_removes_membership_and_current(async_session):
+>       user = await create_user(async_session, 777)
+
+tests/test_logic.py:110: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_logic.py:16: in create_user
+    user = User(telegram_user_id=telegram_user_id)
+<string>:4: in __init__
+    ???
+/Library/Frameworks/Python.framework/Versions/3.13/lib/python3.13/site-packages/sqlalchemy/orm/state.py:571: in _initialize_instance
+    with util.safe_reraise():
+/Library/Frameworks/Python.framework/Versions/3.13/lib/python3.13/site-packages/sqlalchemy/util/langhelpers.py:146: in __exit__
+    raise exc_value.with_traceback(exc_tb)
+/Library/Frameworks/Python.framework/Versions/3.13/lib/python3.13/site-packages/sqlalchemy/orm/state.py:569: in _initialize_instance
+    manager.original_init(*mixed[1:], **kwargs)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <src.models.User object at 0x119da04d0>
+kwargs = {'telegram_user_id': 777}, cls_ = <class 'src.models.User'>
+k = 'telegram_user_id'
+
+    def _declarative_constructor(self: Any, **kwargs: Any) -> None:
+        """A simple constructor that allows initialization from kwargs.
+    
+        Sets attributes on the constructed instance using the names and
+        values in ``kwargs``.
+    
+        Only keys that are present as
+        attributes of the instance's class are allowed. These could be,
+        for example, any mapped columns or relationships.
+        """
+        cls_ = type(self)
+        for k in kwargs:
+            if not hasattr(cls_, k):
+>               raise TypeError(
+                    "%r is an invalid keyword argument for %s" % (k, cls_.__name__)
+                )
+E               TypeError: 'telegram_user_id' is an invalid keyword argument for User
+
+/Library/Frameworks/Python.framework/Versions/3.13/lib/python3.13/site-packages/sqlalchemy/orm/decl_base.py:2175: TypeError
+_________________ test_delete_group_removes_group_and_members __________________
+
+async_session = <sqlalchemy.orm.session.AsyncSession object at 0x119c1bcb0>
+
+    async def test_delete_group_removes_group_and_members(async_session):
+        # Создаём админа и группу
+>       admin = await create_user(async_session, 888)
+
+tests/test_logic.py:129: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_logic.py:16: in create_user
+    user = User(telegram_user_id=telegram_user_id)
+<string>:4: in __init__
+    ???
+/Library/Frameworks/Python.framework/Versions/3.13/lib/python3.13/site-packages/sqlalchemy/orm/state.py:571: in _initialize_instance
+    with util.safe_reraise():
+/Library/Frameworks/Python.framework/Versions/3.13/lib/python3.13/site-packages/sqlalchemy/util/langhelpers.py:146: in __exit__
+    raise exc_value.with_traceback(exc_tb)
+/Library/Frameworks/Python.framework/Versions/3.13/lib/python3.13/site-packages/sqlalchemy/orm/state.py:569: in _initialize_instance
+    manager.original_init(*mixed[1:], **kwargs)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <src.models.User object at 0x119ded480>
+kwargs = {'telegram_user_id': 888}, cls_ = <class 'src.models.User'>
+k = 'telegram_user_id'
+
+    def _declarative_constructor(self: Any, **kwargs: Any) -> None:
+        """A simple constructor that allows initialization from kwargs.
+    
+        Sets attributes on the constructed instance using the names and
+        values in ``kwargs``.
+    
+        Only keys that are present as
+        attributes of the instance's class are allowed. These could be,
+        for example, any mapped columns or relationships.
+        """
+        cls_ = type(self)
+        for k in kwargs:
+            if not hasattr(cls_, k):
+>               raise TypeError(
+                    "%r is an invalid keyword argument for %s" % (k, cls_.__name__)
+                )
+E               TypeError: 'telegram_user_id' is an invalid keyword argument for User
+
+/Library/Frameworks/Python.framework/Versions/3.13/lib/python3.13/site-packages/sqlalchemy/orm/decl_base.py:2175: TypeError
+_____________________________ test_mygroups_logic ______________________________
+
+async_session = <sqlalchemy.orm.session.AsyncSession object at 0x119c1a510>
+
+    async def test_mygroups_logic(async_session):
+        # Пользователь не зарегистрирован
+        user_id = 1001
+>       user = await async_session.execute(select(User).where(User.telegram_user_id == user_id))
+E       AttributeError: type object 'User' has no attribute 'telegram_user_id'
+
+tests/test_logic.py:164: AttributeError
+____________________________ test_skip_is_answered _____________________________
+
+async_session = <sqlalchemy.orm.session.AsyncSession object at 0x119c1a660>
+
+    async def test_skip_is_answered(async_session):
+>       user = await create_user(async_session, 2001)
+
+tests/test_logic.py:218: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_logic.py:16: in create_user
+    user = User(telegram_user_id=telegram_user_id)
+<string>:4: in __init__
+    ???
+/Library/Frameworks/Python.framework/Versions/3.13/lib/python3.13/site-packages/sqlalchemy/orm/state.py:571: in _initialize_instance
+    with util.safe_reraise():
+/Library/Frameworks/Python.framework/Versions/3.13/lib/python3.13/site-packages/sqlalchemy/util/langhelpers.py:146: in __exit__
+    raise exc_value.with_traceback(exc_tb)
+/Library/Frameworks/Python.framework/Versions/3.13/lib/python3.13/site-packages/sqlalchemy/orm/state.py:569: in _initialize_instance
+    manager.original_init(*mixed[1:], **kwargs)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <src.models.User object at 0x119deead0>
+kwargs = {'telegram_user_id': 2001}, cls_ = <class 'src.models.User'>
+k = 'telegram_user_id'
+
+    def _declarative_constructor(self: Any, **kwargs: Any) -> None:
+        """A simple constructor that allows initialization from kwargs.
+    
+        Sets attributes on the constructed instance using the names and
+        values in ``kwargs``.
+    
+        Only keys that are present as
+        attributes of the instance's class are allowed. These could be,
+        for example, any mapped columns or relationships.
+        """
+        cls_ = type(self)
+        for k in kwargs:
+            if not hasattr(cls_, k):
+>               raise TypeError(
+                    "%r is an invalid keyword argument for %s" % (k, cls_.__name__)
+                )
+E               TypeError: 'telegram_user_id' is an invalid keyword argument for User
+
+/Library/Frameworks/Python.framework/Versions/3.13/lib/python3.13/site-packages/sqlalchemy/orm/decl_base.py:2175: TypeError
+____________________________ test_reanswer_question ____________________________
+
+async_session = <sqlalchemy.orm.session.AsyncSession object at 0x119cccad0>
+
+    async def test_reanswer_question(async_session):
+>       user = await create_user(async_session, 2002)
+
+tests/test_logic.py:227: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_logic.py:16: in create_user
+    user = User(telegram_user_id=telegram_user_id)
+<string>:4: in __init__
+    ???
+/Library/Frameworks/Python.framework/Versions/3.13/lib/python3.13/site-packages/sqlalchemy/orm/state.py:571: in _initialize_instance
+    with util.safe_reraise():
+/Library/Frameworks/Python.framework/Versions/3.13/lib/python3.13/site-packages/sqlalchemy/util/langhelpers.py:146: in __exit__
+    raise exc_value.with_traceback(exc_tb)
+/Library/Frameworks/Python.framework/Versions/3.13/lib/python3.13/site-packages/sqlalchemy/orm/state.py:569: in _initialize_instance
+    manager.original_init(*mixed[1:], **kwargs)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <src.models.User object at 0x119cadb50>
+kwargs = {'telegram_user_id': 2002}, cls_ = <class 'src.models.User'>
+k = 'telegram_user_id'
+
+    def _declarative_constructor(self: Any, **kwargs: Any) -> None:
+        """A simple constructor that allows initialization from kwargs.
+    
+        Sets attributes on the constructed instance using the names and
+        values in ``kwargs``.
+    
+        Only keys that are present as
+        attributes of the instance's class are allowed. These could be,
+        for example, any mapped columns or relationships.
+        """
+        cls_ = type(self)
+        for k in kwargs:
+            if not hasattr(cls_, k):
+>               raise TypeError(
+                    "%r is an invalid keyword argument for %s" % (k, cls_.__name__)
+                )
+E               TypeError: 'telegram_user_id' is an invalid keyword argument for User
+
+/Library/Frameworks/Python.framework/Versions/3.13/lib/python3.13/site-packages/sqlalchemy/orm/decl_base.py:2175: TypeError
+___________________ test_load_answered_questions_pagination ____________________
+
+async_session = <sqlalchemy.orm.session.AsyncSession object at 0x119ccd940>
+
+    async def test_load_answered_questions_pagination(async_session):
+>       user = await create_user(async_session, 2003)
+
+tests/test_logic.py:245: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_logic.py:16: in create_user
+    user = User(telegram_user_id=telegram_user_id)
+<string>:4: in __init__
+    ???
+/Library/Frameworks/Python.framework/Versions/3.13/lib/python3.13/site-packages/sqlalchemy/orm/state.py:571: in _initialize_instance
+    with util.safe_reraise():
+/Library/Frameworks/Python.framework/Versions/3.13/lib/python3.13/site-packages/sqlalchemy/util/langhelpers.py:146: in __exit__
+    raise exc_value.with_traceback(exc_tb)
+/Library/Frameworks/Python.framework/Versions/3.13/lib/python3.13/site-packages/sqlalchemy/orm/state.py:569: in _initialize_instance
+    manager.original_init(*mixed[1:], **kwargs)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <src.models.User object at 0x119db5350>
+kwargs = {'telegram_user_id': 2003}, cls_ = <class 'src.models.User'>
+k = 'telegram_user_id'
+
+    def _declarative_constructor(self: Any, **kwargs: Any) -> None:
+        """A simple constructor that allows initialization from kwargs.
+    
+        Sets attributes on the constructed instance using the names and
+        values in ``kwargs``.
+    
+        Only keys that are present as
+        attributes of the instance's class are allowed. These could be,
+        for example, any mapped columns or relationships.
+        """
+        cls_ = type(self)
+        for k in kwargs:
+            if not hasattr(cls_, k):
+>               raise TypeError(
+                    "%r is an invalid keyword argument for %s" % (k, cls_.__name__)
+                )
+E               TypeError: 'telegram_user_id' is an invalid keyword argument for User
+
+/Library/Frameworks/Python.framework/Versions/3.13/lib/python3.13/site-packages/sqlalchemy/orm/decl_base.py:2175: TypeError
+________________________ test_delete_answered_question _________________________
+
+async_session = <sqlalchemy.orm.session.AsyncSession object at 0x119c19d30>
+
+    async def test_delete_answered_question(async_session):
+>       user = await create_user(async_session, 2004)
+
+tests/test_logic.py:260: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_logic.py:16: in create_user
+    user = User(telegram_user_id=telegram_user_id)
+<string>:4: in __init__
+    ???
+/Library/Frameworks/Python.framework/Versions/3.13/lib/python3.13/site-packages/sqlalchemy/orm/state.py:571: in _initialize_instance
+    with util.safe_reraise():
+/Library/Frameworks/Python.framework/Versions/3.13/lib/python3.13/site-packages/sqlalchemy/util/langhelpers.py:146: in __exit__
+    raise exc_value.with_traceback(exc_tb)
+/Library/Frameworks/Python.framework/Versions/3.13/lib/python3.13/site-packages/sqlalchemy/orm/state.py:569: in _initialize_instance
+    manager.original_init(*mixed[1:], **kwargs)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <src.models.User object at 0x119d932f0>
+kwargs = {'telegram_user_id': 2004}, cls_ = <class 'src.models.User'>
+k = 'telegram_user_id'
+
+    def _declarative_constructor(self: Any, **kwargs: Any) -> None:
+        """A simple constructor that allows initialization from kwargs.
+    
+        Sets attributes on the constructed instance using the names and
+        values in ``kwargs``.
+    
+        Only keys that are present as
+        attributes of the instance's class are allowed. These could be,
+        for example, any mapped columns or relationships.
+        """
+        cls_ = type(self)
+        for k in kwargs:
+            if not hasattr(cls_, k):
+>               raise TypeError(
+                    "%r is an invalid keyword argument for %s" % (k, cls_.__name__)
+                )
+E               TypeError: 'telegram_user_id' is an invalid keyword argument for User
+
+/Library/Frameworks/Python.framework/Versions/3.13/lib/python3.13/site-packages/sqlalchemy/orm/decl_base.py:2175: TypeError
+___________________ test_balance_not_incremented_on_reanswer ___________________
+
+async_session = <sqlalchemy.orm.session.AsyncSession object at 0x119c1a660>
+
+    async def test_balance_not_incremented_on_reanswer(async_session):
+>       user = await create_user(async_session, 2005)
+
+tests/test_logic.py:275: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_logic.py:16: in create_user
+    user = User(telegram_user_id=telegram_user_id)
+<string>:4: in __init__
+    ???
+/Library/Frameworks/Python.framework/Versions/3.13/lib/python3.13/site-packages/sqlalchemy/orm/state.py:571: in _initialize_instance
+    with util.safe_reraise():
+/Library/Frameworks/Python.framework/Versions/3.13/lib/python3.13/site-packages/sqlalchemy/util/langhelpers.py:146: in __exit__
+    raise exc_value.with_traceback(exc_tb)
+/Library/Frameworks/Python.framework/Versions/3.13/lib/python3.13/site-packages/sqlalchemy/orm/state.py:569: in _initialize_instance
+    manager.original_init(*mixed[1:], **kwargs)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <src.models.User object at 0x119d93980>
+kwargs = {'telegram_user_id': 2005}, cls_ = <class 'src.models.User'>
+k = 'telegram_user_id'
+
+    def _declarative_constructor(self: Any, **kwargs: Any) -> None:
+        """A simple constructor that allows initialization from kwargs.
+    
+        Sets attributes on the constructed instance using the names and
+        values in ``kwargs``.
+    
+        Only keys that are present as
+        attributes of the instance's class are allowed. These could be,
+        for example, any mapped columns or relationships.
+        """
+        cls_ = type(self)
+        for k in kwargs:
+            if not hasattr(cls_, k):
+>               raise TypeError(
+                    "%r is an invalid keyword argument for %s" % (k, cls_.__name__)
+                )
+E               TypeError: 'telegram_user_id' is an invalid keyword argument for User
+
+/Library/Frameworks/Python.framework/Versions/3.13/lib/python3.13/site-packages/sqlalchemy/orm/decl_base.py:2175: TypeError
+___________________ test_questions_isolation_between_groups ____________________
+
+async_session = <sqlalchemy.orm.session.AsyncSession object at 0x119ccdbe0>
+
+    async def test_questions_isolation_between_groups(async_session):
+        """Вопросы одной группы не видны в другой (строгая изоляция по group_id)."""
+>       user = await create_user(async_session, 3001)
+
+tests/test_logic.py:294: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_logic.py:16: in create_user
+    user = User(telegram_user_id=telegram_user_id)
+<string>:4: in __init__
+    ???
+/Library/Frameworks/Python.framework/Versions/3.13/lib/python3.13/site-packages/sqlalchemy/orm/state.py:571: in _initialize_instance
+    with util.safe_reraise():
+/Library/Frameworks/Python.framework/Versions/3.13/lib/python3.13/site-packages/sqlalchemy/util/langhelpers.py:146: in __exit__
+    raise exc_value.with_traceback(exc_tb)
+/Library/Frameworks/Python.framework/Versions/3.13/lib/python3.13/site-packages/sqlalchemy/orm/state.py:569: in _initialize_instance
+    manager.original_init(*mixed[1:], **kwargs)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <src.models.User object at 0x119e0cbb0>
+kwargs = {'telegram_user_id': 3001}, cls_ = <class 'src.models.User'>
+k = 'telegram_user_id'
+
+    def _declarative_constructor(self: Any, **kwargs: Any) -> None:
+        """A simple constructor that allows initialization from kwargs.
+    
+        Sets attributes on the constructed instance using the names and
+        values in ``kwargs``.
+    
+        Only keys that are present as
+        attributes of the instance's class are allowed. These could be,
+        for example, any mapped columns or relationships.
+        """
+        cls_ = type(self)
+        for k in kwargs:
+            if not hasattr(cls_, k):
+>               raise TypeError(
+                    "%r is an invalid keyword argument for %s" % (k, cls_.__name__)
+                )
+E               TypeError: 'telegram_user_id' is an invalid keyword argument for User
+
+/Library/Frameworks/Python.framework/Versions/3.13/lib/python3.13/site-packages/sqlalchemy/orm/decl_base.py:2175: TypeError
+____________________ test_cleanup_on_group_delete_and_leave ____________________
+
+async_session = <sqlalchemy.orm.session.AsyncSession object at 0x119c1b770>
+
+    async def test_cleanup_on_group_delete_and_leave(async_session):
+        """Проверка, что после удаления/выхода из группы все связанные данные корректно очищаются (edge-cases)."""
+>       admin = await create_user(async_session, 3002)
+
+tests/test_logic.py:316: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_logic.py:16: in create_user
+    user = User(telegram_user_id=telegram_user_id)
+<string>:4: in __init__
+    ???
+/Library/Frameworks/Python.framework/Versions/3.13/lib/python3.13/site-packages/sqlalchemy/orm/state.py:571: in _initialize_instance
+    with util.safe_reraise():
+/Library/Frameworks/Python.framework/Versions/3.13/lib/python3.13/site-packages/sqlalchemy/util/langhelpers.py:146: in __exit__
+    raise exc_value.with_traceback(exc_tb)
+/Library/Frameworks/Python.framework/Versions/3.13/lib/python3.13/site-packages/sqlalchemy/orm/state.py:569: in _initialize_instance
+    manager.original_init(*mixed[1:], **kwargs)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <src.models.User object at 0x10337ea50>
+kwargs = {'telegram_user_id': 3002}, cls_ = <class 'src.models.User'>
+k = 'telegram_user_id'
+
+    def _declarative_constructor(self: Any, **kwargs: Any) -> None:
+        """A simple constructor that allows initialization from kwargs.
+    
+        Sets attributes on the constructed instance using the names and
+        values in ``kwargs``.
+    
+        Only keys that are present as
+        attributes of the instance's class are allowed. These could be,
+        for example, any mapped columns or relationships.
+        """
+        cls_ = type(self)
+        for k in kwargs:
+            if not hasattr(cls_, k):
+>               raise TypeError(
+                    "%r is an invalid keyword argument for %s" % (k, cls_.__name__)
+                )
+E               TypeError: 'telegram_user_id' is an invalid keyword argument for User
+
+/Library/Frameworks/Python.framework/Versions/3.13/lib/python3.13/site-packages/sqlalchemy/orm/decl_base.py:2175: TypeError
+___________________________ test_switch_group_logic ____________________________
+
+async_session = <sqlalchemy.orm.session.AsyncSession object at 0x119c1a900>
+
+    async def test_switch_group_logic(async_session):
+        """Проверка, что смена группы (switch group) происходит корректно."""
+>       user = await create_user(async_session, 3004)
+
+tests/test_logic.py:352: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_logic.py:16: in create_user
+    user = User(telegram_user_id=telegram_user_id)
+<string>:4: in __init__
+    ???
+/Library/Frameworks/Python.framework/Versions/3.13/lib/python3.13/site-packages/sqlalchemy/orm/state.py:571: in _initialize_instance
+    with util.safe_reraise():
+/Library/Frameworks/Python.framework/Versions/3.13/lib/python3.13/site-packages/sqlalchemy/util/langhelpers.py:146: in __exit__
+    raise exc_value.with_traceback(exc_tb)
+/Library/Frameworks/Python.framework/Versions/3.13/lib/python3.13/site-packages/sqlalchemy/orm/state.py:569: in _initialize_instance
+    manager.original_init(*mixed[1:], **kwargs)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <src.models.User object at 0x119c73ee0>
+kwargs = {'telegram_user_id': 3004}, cls_ = <class 'src.models.User'>
+k = 'telegram_user_id'
+
+    def _declarative_constructor(self: Any, **kwargs: Any) -> None:
+        """A simple constructor that allows initialization from kwargs.
+    
+        Sets attributes on the constructed instance using the names and
+        values in ``kwargs``.
+    
+        Only keys that are present as
+        attributes of the instance's class are allowed. These could be,
+        for example, any mapped columns or relationships.
+        """
+        cls_ = type(self)
+        for k in kwargs:
+            if not hasattr(cls_, k):
+>               raise TypeError(
+                    "%r is an invalid keyword argument for %s" % (k, cls_.__name__)
+                )
+E               TypeError: 'telegram_user_id' is an invalid keyword argument for User
+
+/Library/Frameworks/Python.framework/Versions/3.13/lib/python3.13/site-packages/sqlalchemy/orm/decl_base.py:2175: TypeError
+__________________________ test_instructions_command ___________________________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x11e16fbb0>
+
+    @pytest.mark.asyncio
+    async def test_instructions_command(monkeypatch):
+        """Проверяет, что инструкция отображается, удаляется и не дублируется."""
+        state_data = {}
+        class DummyState:
+            async def get_data(self):
+                return state_data.copy()
+            async def update_data(self, **kwargs):
+                state_data.update(kwargs)
+        class DummyMessage:
+            def __init__(self):
+                self.chat = pytypes.SimpleNamespace(id=123)
+                self.bot = self
+                self.deleted = []
+                self.sent = []
+                self.from_user = pytypes.SimpleNamespace(id=111, language='en')
+            async def answer(self, text, parse_mode=None, **kwargs):
+                self.sent.append(text)
+                # эмулируем message_id
+                return pytypes.SimpleNamespace(message_id=len(self.sent))
+            async def delete_message(self, chat_id, msg_id):
+                self.deleted.append(msg_id)
+        message = DummyMessage()
+        state = DummyState()
+        # Первый вызов — инструкция появляется
+>       await instructions(message, state)
+
+tests/test_logic.py:409: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+message = <test_logic.test_instructions_command.<locals>.DummyMessage object at 0x119c1a120>
+state = <test_logic.test_instructions_command.<locals>.DummyState object at 0x119c19d30>
+
+    @router.message(Command("instructions"))
+    async def instructions(message: types.Message, state: FSMContext):
+        import logging
+        try:
+            print('/instructions handler triggered')
+            await hide_instructions_and_mygroups_by_message(message, state)
+            # Получаем user из БД для актуального языка
+            async with AsyncSessionLocal() as session:
+>               user = await session.execute(select(User).where(User.telegram_user_id == message.from_user.id))
+E               AttributeError: type object 'User' has no attribute 'telegram_user_id'
+
+src/handlers/system.py:43: AttributeError
+----------------------------- Captured stdout call -----------------------------
+/instructions handler triggered
+------------------------------ Captured log call -------------------------------
+ERROR    root:system.py:48 Ошибка в хендлере /instructions
+Traceback (most recent call last):
+  File "/Users/dk/Documents/AllkindsBot/src/handlers/system.py", line 43, in instructions
+    user = await session.execute(select(User).where(User.telegram_user_id == message.from_user.id))
+                                                    ^^^^^^^^^^^^^^^^^^^^^
+AttributeError: type object 'User' has no attribute 'telegram_user_id'
+____________________________ test_mygroups_command _____________________________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x11e16cd60>
+
+    @pytest.mark.asyncio
+    async def test_mygroups_command(monkeypatch):
+        """Проверяет, что /mygroups отображает сообщение, сохраняет и удаляет message_id."""
+        state_data = {}
+        class DummyState:
+            async def get_data(self):
+                return state_data.copy()
+            async def update_data(self, **kwargs):
+                state_data.update(kwargs)
+        class DummyMessage:
+            def __init__(self):
+                self.chat = pytypes.SimpleNamespace(id=123)
+                self.bot = self
+                self.deleted = []
+                self.sent = []
+                self.from_user = pytypes.SimpleNamespace(id=111, language='en')
+            async def answer(self, text, **kwargs):
+                self.sent.append(text)
+                # эмулируем message_id
+                return pytypes.SimpleNamespace(message_id=len(self.sent))
+            async def delete_message(self, chat_id, msg_id):
+                self.deleted.append(msg_id)
+        # Мокаем show_user_groups чтобы оно отправляло сообщение и сохраняло message_id
+        async def fake_show_user_groups(message, state):
+            msg = await message.answer(f"Groups for {message.from_user.id}")
+            data = await state.get_data()
+            ids = data.get("my_groups_msg_ids", [])
+            ids.append(msg.message_id)
+            await state.update_data(my_groups_msg_ids=ids)
+        monkeypatch.setattr("src.handlers.groups.show_user_groups", fake_show_user_groups)
+        message = DummyMessage()
+        state = DummyState()
+        # Первый вызов — сообщение появляется
+>       await my_groups(message, state)
+
+tests/test_logic.py:451: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+message = <test_logic.test_mygroups_command.<locals>.DummyMessage object at 0x119c1b8c0>
+state = <test_logic.test_mygroups_command.<locals>.DummyState object at 0x119c1bb60>
+
+    @router.message(Command("mygroups"))
+    async def my_groups(message: types.Message, state: FSMContext):
+        import logging
+        try:
+            print('/mygroups handler triggered')
+            await hide_instructions_and_mygroups_by_message(message, state)
+            # Получаем user из БД для актуального языка
+            async with AsyncSessionLocal() as session:
+>               user = await session.execute(select(User).where(User.telegram_user_id == message.from_user.id))
+E               AttributeError: type object 'User' has no attribute 'telegram_user_id'
+
+src/handlers/system.py:59: AttributeError
+----------------------------- Captured stdout call -----------------------------
+/mygroups handler triggered
+------------------------------ Captured log call -------------------------------
+ERROR    root:system.py:65 Ошибка в хендлере /mygroups
+Traceback (most recent call last):
+  File "/Users/dk/Documents/AllkindsBot/src/handlers/system.py", line 59, in my_groups
+    user = await session.execute(select(User).where(User.telegram_user_id == message.from_user.id))
+                                                    ^^^^^^^^^^^^^^^^^^^^^
+AttributeError: type object 'User' has no attribute 'telegram_user_id'
+___________________ test_answered_questions_load_more_button ___________________
+
+async_session = <sqlalchemy.orm.session.AsyncSession object at 0x119c1a900>
+
+    @pytest.mark.asyncio
+    async def test_answered_questions_load_more_button(async_session):
+        """Проверяет, что кнопка 'Загрузить ещё' появляется и исчезает корректно при пагинации отвеченных вопросов."""
+>       user = await create_user(async_session, 9001)
+
+tests/test_logic.py:463: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_logic.py:16: in create_user
+    user = User(telegram_user_id=telegram_user_id)
+<string>:4: in __init__
+    ???
+/Library/Frameworks/Python.framework/Versions/3.13/lib/python3.13/site-packages/sqlalchemy/orm/state.py:571: in _initialize_instance
+    with util.safe_reraise():
+/Library/Frameworks/Python.framework/Versions/3.13/lib/python3.13/site-packages/sqlalchemy/util/langhelpers.py:146: in __exit__
+    raise exc_value.with_traceback(exc_tb)
+/Library/Frameworks/Python.framework/Versions/3.13/lib/python3.13/site-packages/sqlalchemy/orm/state.py:569: in _initialize_instance
+    manager.original_init(*mixed[1:], **kwargs)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <src.models.User object at 0x119ca37d0>
+kwargs = {'telegram_user_id': 9001}, cls_ = <class 'src.models.User'>
+k = 'telegram_user_id'
+
+    def _declarative_constructor(self: Any, **kwargs: Any) -> None:
+        """A simple constructor that allows initialization from kwargs.
+    
+        Sets attributes on the constructed instance using the names and
+        values in ``kwargs``.
+    
+        Only keys that are present as
+        attributes of the instance's class are allowed. These could be,
+        for example, any mapped columns or relationships.
+        """
+        cls_ = type(self)
+        for k in kwargs:
+            if not hasattr(cls_, k):
+>               raise TypeError(
+                    "%r is an invalid keyword argument for %s" % (k, cls_.__name__)
+                )
+E               TypeError: 'telegram_user_id' is an invalid keyword argument for User
+
+/Library/Frameworks/Python.framework/Versions/3.13/lib/python3.13/site-packages/sqlalchemy/orm/decl_base.py:2175: TypeError
+=============================== warnings summary ===============================
+../../../../Library/Frameworks/Python.framework/Versions/3.13/lib/python3.13/site-packages/_pytest/config/__init__.py:1441
+  /Library/Frameworks/Python.framework/Versions/3.13/lib/python3.13/site-packages/_pytest/config/__init__.py:1441: PytestConfigWarning: Unknown config option: asyncio_fixture_scope
+  
+    self._warn_or_fail_if_strict(f"Unknown config option: {key}\n")
+
+tests/test_logic.py::test_admin_auto_added_to_group
+  /Library/Frameworks/Python.framework/Versions/3.13/lib/python3.13/site-packages/pytest_asyncio/plugin.py:884: DeprecationWarning: The event_loop fixture provided by pytest-asyncio has been redefined in
+  /Users/dk/Documents/AllkindsBot/tests/conftest.py:20
+  Replacing the event_loop fixture with a custom implementation is deprecated
+  and will lead to errors in the future.
+  If you want to request an asyncio event loop with a scope other than function
+  scope, use the "loop_scope" argument to the asyncio mark when marking the tests.
+  If you want to return different types of event loops, use the event_loop_policy
+  fixture.
+  
+    warnings.warn(
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED tests/test_logic.py::test_admin_auto_added_to_group - TypeError: 'tele...
+FAILED tests/test_logic.py::test_join_group_by_code - TypeError: 'telegram_us...
+FAILED tests/test_logic.py::test_onboarding_profile - TypeError: 'telegram_us...
+FAILED tests/test_logic.py::test_admin_sees_own_groups - TypeError: 'telegram...
+FAILED tests/test_logic.py::test_non_admin_cannot_create_group - TypeError: '...
+FAILED tests/test_logic.py::test_leave_last_group_removes_membership_and_current
+FAILED tests/test_logic.py::test_delete_group_removes_group_and_members - Typ...
+FAILED tests/test_logic.py::test_mygroups_logic - AttributeError: type object...
+FAILED tests/test_logic.py::test_skip_is_answered - TypeError: 'telegram_user...
+FAILED tests/test_logic.py::test_reanswer_question - TypeError: 'telegram_use...
+FAILED tests/test_logic.py::test_load_answered_questions_pagination - TypeErr...
+FAILED tests/test_logic.py::test_delete_answered_question - TypeError: 'teleg...
+FAILED tests/test_logic.py::test_balance_not_incremented_on_reanswer - TypeEr...
+FAILED tests/test_logic.py::test_questions_isolation_between_groups - TypeErr...
+FAILED tests/test_logic.py::test_cleanup_on_group_delete_and_leave - TypeErro...
+FAILED tests/test_logic.py::test_switch_group_logic - TypeError: 'telegram_us...
+FAILED tests/test_logic.py::test_instructions_command - AttributeError: type ...
+FAILED tests/test_logic.py::test_mygroups_command - AttributeError: type obje...
+FAILED tests/test_logic.py::test_answered_questions_load_more_button - TypeEr...
+======================== 19 failed, 2 warnings in 5.15s ========================
+Tests failed! Bot will not start.

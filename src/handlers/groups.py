@@ -36,10 +36,10 @@ ADMIN_USER_ID = int(os.getenv('ADMIN_USER_ID', 0))
 
 async def ensure_admin_in_db():
     async with AsyncSessionLocal() as session:
-        user = await session.execute(select(User).where(User.telegram_user_id == ADMIN_USER_ID))
+        user = await session.execute(select(User).where(User.id == ADMIN_USER_ID))
         user = user.scalar()
         if not user:
-            user = User(telegram_user_id=ADMIN_USER_ID)
+            user = User(id=ADMIN_USER_ID)
             session.add(user)
             await session.flush()
         creator = await session.execute(select(GroupCreator).where(GroupCreator.user_id == user.id))
@@ -51,7 +51,7 @@ async def ensure_admin_in_db():
 async def get_user_groups(user_id: int):
     async with AsyncSessionLocal() as session:
         result = await session.execute(
-            select(Group).join(GroupMember).join(User).where(User.telegram_user_id == user_id)
+            select(Group).join(GroupMember).join(User).where(User.id == user_id)
         )
         groups = result.scalars().all()
         logging.info(f"[get_user_groups] user_id={user_id}, groups={[g.name for g in groups]}")
@@ -61,10 +61,10 @@ async def create_group(user_id: int, name: str, description: str):
     from src.utils import generate_unique_invite_code
     invite_code = await generate_unique_invite_code()
     async with AsyncSessionLocal() as session:
-        user = await session.execute(select(User).where(User.telegram_user_id == user_id))
+        user = await session.execute(select(User).where(User.id == user_id))
         user = user.scalar()
         if not user:
-            user = User(telegram_user_id=user_id)
+            user = User(id=user_id)
             session.add(user)
             await session.flush()
         group = Group(name=name, description=description, invite_code=invite_code, creator_user_id=user.id)
@@ -81,10 +81,10 @@ async def join_group_by_code(user_id: int, code: str):
         group = group.scalar()
         if not group:
             return None
-        user = await session.execute(select(User).where(User.telegram_user_id == user_id))
+        user = await session.execute(select(User).where(User.id == user_id))
         user = user.scalar()
         if not user:
-            user = User(telegram_user_id=user_id)
+            user = User(id=user_id)
             session.add(user)
             await session.flush()
         member = await session.execute(select(GroupMember).where(GroupMember.user_id == user.id, GroupMember.group_id == group.id))
@@ -103,7 +103,7 @@ async def show_user_groups(message: types.Message, state: FSMContext) -> None:
     user_id = message.from_user.id
     groups = await get_user_groups(user_id)
     async with AsyncSessionLocal() as session:
-        user = await session.execute(select(User).where(User.telegram_user_id == user_id))
+        user = await session.execute(select(User).where(User.id == user_id))
         user = user.scalar()
         if not groups:
             is_creator = await is_group_creator(user_id)
@@ -194,7 +194,7 @@ async def cb_confirm_leave_group(callback: types.CallbackQuery, state: FSMContex
     group_id = int(callback.data.split("_")[-1])
     user_id = callback.from_user.id
     async with AsyncSessionLocal() as session:
-        user = await session.execute(select(User).where(User.telegram_user_id == user_id))
+        user = await session.execute(select(User).where(User.id == user_id))
         user = user.scalar()
     groups = await get_user_groups(user_id)
     group = next((g for g in groups if g["id"] == group_id), None)
@@ -220,7 +220,7 @@ async def cb_confirm_delete_group(callback: types.CallbackQuery, state: FSMConte
     group_id = int(callback.data.split("_")[-1])
     user_id = callback.from_user.id
     async with AsyncSessionLocal() as session:
-        user = await session.execute(select(User).where(User.telegram_user_id == user_id))
+        user = await session.execute(select(User).where(User.id == user_id))
         user = user.scalar()
     from src.services.groups import get_user_groups
     groups = await get_user_groups(user_id)
@@ -246,7 +246,7 @@ async def cb_delete_group_yes(callback: types.CallbackQuery, state: FSMContext):
     group_id = int(callback.data.split("_")[-1])
     user_id = callback.from_user.id
     async with AsyncSessionLocal() as session:
-        user = await session.execute(select(User).where(User.telegram_user_id == user_id))
+        user = await session.execute(select(User).where(User.id == user_id))
         user = user.scalar()
     # Удаляем группу через сервис
     result = await delete_group_service(group_id)
@@ -275,7 +275,7 @@ async def cb_create_group(callback: types.CallbackQuery, state: FSMContext):
 async def group_name_step(message: types.Message, state: FSMContext):
     name = message.text.strip()
     async with AsyncSessionLocal() as session:
-        user = await session.execute(select(User).where(User.telegram_user_id == message.from_user.id))
+        user = await session.execute(select(User).where(User.id == message.from_user.id))
         user = user.scalar()
     if not name:
         await message.answer(get_message(GROUPS_NAME_EMPTY, user=user))
@@ -288,7 +288,7 @@ async def group_name_step(message: types.Message, state: FSMContext):
 async def group_desc_step(message: types.Message, state: FSMContext):
     desc = message.text.strip()
     async with AsyncSessionLocal() as session:
-        user = await session.execute(select(User).where(User.telegram_user_id == message.from_user.id))
+        user = await session.execute(select(User).where(User.id == message.from_user.id))
         user = user.scalar()
     if not desc:
         await message.answer(get_message(GROUPS_DESC_EMPTY, user=user))
@@ -317,7 +317,7 @@ async def show_group_welcome_and_question(message, user_id, group_id):
         from src.models import User
         from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
         async with AsyncSessionLocal() as session:
-            user = await session.execute(select(User).where(User.telegram_user_id == user_id))
+            user = await session.execute(select(User).where(User.id == user_id))
             user = user.scalar()
             print(f"[DEBUG] loaded user: {user}")
         onboarded = await is_onboarded(user_id, group_id)
@@ -400,7 +400,7 @@ async def cb_switch_to_group(callback: types.CallbackQuery, state: FSMContext):
         await callback.answer()
     else:
         async with AsyncSessionLocal() as session:
-            user = await session.execute(select(User).where(User.telegram_user_id == user_id))
+            user = await session.execute(select(User).where(User.id == user_id))
             user = user.scalar()
         await callback.message.answer(get_message("Let's set up your profile for this group!\nEnter your nickname:", user=user), reply_markup=types.ReplyKeyboardRemove())
         await state.update_data(group_id=group_id)
@@ -411,7 +411,7 @@ async def cb_switch_to_group(callback: types.CallbackQuery, state: FSMContext):
 @router.callback_query(F.data == "join_another_group_with_code")
 async def cb_join_group(callback: types.CallbackQuery, state: FSMContext):
     async with AsyncSessionLocal() as session:
-        user = await session.execute(select(User).where(User.telegram_user_id == callback.from_user.id))
+        user = await session.execute(select(User).where(User.id == callback.from_user.id))
         user = user.scalar()
     await callback.message.answer(get_message("Enter the 5-character invite code:", user=user), reply_markup=types.ReplyKeyboardRemove())
     from src.fsm.states import JoinGroup
@@ -422,7 +422,7 @@ async def cb_join_group(callback: types.CallbackQuery, state: FSMContext):
 async def process_invite_code(message: types.Message, state: FSMContext):
     code = message.text.strip()
     async with AsyncSessionLocal() as session:
-        user = await session.execute(select(User).where(User.telegram_user_id == message.from_user.id))
+        user = await session.execute(select(User).where(User.id == message.from_user.id))
         user = user.scalar()
     if not code or len(code) != 5:
         await message.answer(get_message(GROUPS_JOIN_INVALID_CODE, user=user))
@@ -449,7 +449,7 @@ async def cb_find_match(callback: types.CallbackQuery, state: FSMContext):
     from sqlalchemy import select
     from src.db import AsyncSessionLocal
     async with AsyncSessionLocal() as session:
-        user = await session.execute(select(User).where(User.telegram_user_id == user_id))
+        user = await session.execute(select(User).where(User.id == user_id))
         user = user.scalar()
         if not user:
             await callback.answer(get_message(MATCH_NO_VALID, user=user, show_alert=True))
@@ -499,7 +499,7 @@ async def cb_match_hide(callback: types.CallbackQuery, state: FSMContext):
     match_user_id = int(data[-1])
     # Получаем group_id из текущей группы пользователя
     async with AsyncSessionLocal() as session:
-        user = await session.execute(select(User).where(User.telegram_user_id == user_id))
+        user = await session.execute(select(User).where(User.id == user_id))
         user = user.scalar()
         group_id = user.current_group_id if user else None
     if group_id:
@@ -525,7 +525,7 @@ async def cb_match_postpone(callback: types.CallbackQuery, state: FSMContext):
     match_user_id = int(data[-1])
     # Получаем group_id из текущей группы пользователя
     async with AsyncSessionLocal() as session:
-        user = await session.execute(select(User).where(User.telegram_user_id == user_id))
+        user = await session.execute(select(User).where(User.id == user_id))
         user = user.scalar()
         group_id = user.current_group_id if user else None
         if group_id:
@@ -564,7 +564,7 @@ async def handle_vibing_button(message: types.Message, state: FSMContext):
     try:
         await state.update_data(vibing_msg_id=message.message_id)
         async with AsyncSessionLocal() as session:
-            user = await session.execute(select(User).where(User.telegram_user_id == message.from_user.id))
+            user = await session.execute(select(User).where(User.id == message.from_user.id))
             user = user.scalar()
             group_id = user.current_group_id if user else None
         if not group_id:
@@ -591,7 +591,7 @@ async def cb_match_chat(callback: types.CallbackQuery, state: FSMContext):
     match_user_id = int(callback.data.split("_")[-1])
     from src.models import MatchStatus
     async with AsyncSessionLocal() as session:
-        user = await session.execute(select(User).where(User.telegram_user_id == user_id))
+        user = await session.execute(select(User).where(User.id == user_id))
         user = user.scalar()
         group_id = user.current_group_id if user else None
         member = await session.execute(select(GroupMember).where(GroupMember.user_id == user.id, GroupMember.group_id == group_id))
@@ -685,7 +685,7 @@ async def cb_match_chat(callback: types.CallbackQuery, state: FSMContext):
 async def switch_group_service(user_id: int, group_id: int) -> dict:
     """Сменить текущую группу пользователя. Вернуть статус и данные группы."""
     async with AsyncSessionLocal() as session:
-        user = await session.execute(select(User).where(User.telegram_user_id == user_id))
+        user = await session.execute(select(User).where(User.id == user_id))
         user = user.scalar()
         member = await session.execute(select(GroupMember).where(GroupMember.user_id == user.id, GroupMember.group_id == group_id))
         member = member.scalar()

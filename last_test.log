@@ -1,0 +1,49 @@
+============================= test session starts ==============================
+platform darwin -- Python 3.13.2, pytest-8.3.5, pluggy-1.5.0 -- /Library/Frameworks/Python.framework/Versions/3.13/bin/python3
+cachedir: .pytest_cache
+rootdir: /Users/dk/Documents/AllkindsBot
+configfile: pytest.ini
+plugins: anyio-4.9.0, asyncio-0.26.0
+asyncio: mode=Mode.STRICT, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collecting ... collected 19 items
+
+tests/test_logic.py::test_admin_auto_added_to_group PASSED               [  5%]
+tests/test_logic.py::test_join_group_by_code PASSED                      [ 10%]
+tests/test_logic.py::test_onboarding_profile PASSED                      [ 15%]
+tests/test_logic.py::test_admin_sees_own_groups PASSED                   [ 21%]
+tests/test_logic.py::test_non_admin_cannot_create_group PASSED           [ 26%]
+tests/test_logic.py::test_leave_last_group_removes_membership_and_current PASSED [ 31%]
+tests/test_logic.py::test_delete_group_removes_group_and_members PASSED  [ 36%]
+tests/test_logic.py::test_mygroups_logic PASSED                          [ 42%]
+tests/test_logic.py::test_skip_is_answered PASSED                        [ 47%]
+tests/test_logic.py::test_reanswer_question PASSED                       [ 52%]
+tests/test_logic.py::test_load_answered_questions_pagination PASSED      [ 57%]
+tests/test_logic.py::test_delete_answered_question PASSED                [ 63%]
+tests/test_logic.py::test_balance_not_incremented_on_reanswer PASSED     [ 68%]
+tests/test_logic.py::test_questions_isolation_between_groups PASSED      [ 73%]
+tests/test_logic.py::test_cleanup_on_group_delete_and_leave PASSED       [ 78%]
+tests/test_logic.py::test_switch_group_logic PASSED                      [ 84%]
+tests/test_logic.py::test_instructions_command PASSED                    [ 89%]
+tests/test_logic.py::test_mygroups_command PASSED                        [ 94%]
+tests/test_logic.py::test_answered_questions_load_more_button PASSED     [100%]
+
+=============================== warnings summary ===============================
+../../../../Library/Frameworks/Python.framework/Versions/3.13/lib/python3.13/site-packages/_pytest/config/__init__.py:1441
+  /Library/Frameworks/Python.framework/Versions/3.13/lib/python3.13/site-packages/_pytest/config/__init__.py:1441: PytestConfigWarning: Unknown config option: asyncio_fixture_scope
+  
+    self._warn_or_fail_if_strict(f"Unknown config option: {key}\n")
+
+tests/test_logic.py::test_admin_auto_added_to_group
+  /Library/Frameworks/Python.framework/Versions/3.13/lib/python3.13/site-packages/pytest_asyncio/plugin.py:884: DeprecationWarning: The event_loop fixture provided by pytest-asyncio has been redefined in
+  /Users/dk/Documents/AllkindsBot/tests/conftest.py:20
+  Replacing the event_loop fixture with a custom implementation is deprecated
+  and will lead to errors in the future.
+  If you want to request an asyncio event loop with a scope other than function
+  scope, use the "loop_scope" argument to the asyncio mark when marking the tests.
+  If you want to return different types of event loops, use the event_loop_policy
+  fixture.
+  
+    warnings.warn(
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+======================== 19 passed, 2 warnings in 3.91s ========================

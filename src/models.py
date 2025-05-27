@@ -6,8 +6,7 @@ Base = declarative_base()
 
 class User(Base):
     __tablename__ = 'users'
-    id = Column(Integer, primary_key=True)
-    telegram_user_id = Column(BigInteger, unique=True, index=True, nullable=False)
+    id = Column(Integer, primary_key=True, unique=True, nullable=False)
     current_group_id = Column(Integer, ForeignKey('groups.id'), nullable=True)
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
     language = Column(String(8), default='en')  # Язык пользователя для мультиязычности

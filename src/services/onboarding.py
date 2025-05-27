@@ -3,16 +3,8 @@ from src.models import User, GroupMember
 from sqlalchemy import select
 from typing import Optional
 
-async def get_internal_user_id(telegram_user_id: int, session) -> Optional[int]:
-    user = await session.execute(select(User).where(User.telegram_user_id == telegram_user_id))
-    user = user.scalar()
-    return user.id if user else None
-
-async def save_nickname_service(telegram_user_id: int, group_id: int, nickname: str) -> None:
+async def save_nickname_service(user_id: int, group_id: int, nickname: str) -> None:
     async with AsyncSessionLocal() as session:
-        user_id = await get_internal_user_id(telegram_user_id, session)
-        if not user_id:
-            return
         member = await session.execute(select(GroupMember).where(GroupMember.user_id == user_id, GroupMember.group_id == group_id))
         member = member.scalar()
         if not member:
@@ -24,11 +16,8 @@ async def save_nickname_service(telegram_user_id: int, group_id: int, nickname: 
             member.nickname = nickname
         await session.commit()
 
-async def save_photo_service(telegram_user_id: int, group_id: int, photo_url: str) -> None:
+async def save_photo_service(user_id: int, group_id: int, photo_url: str) -> None:
     async with AsyncSessionLocal() as session:
-        user_id = await get_internal_user_id(telegram_user_id, session)
-        if not user_id:
-            return
         member = await session.execute(select(GroupMember).where(GroupMember.user_id == user_id, GroupMember.group_id == group_id))
         member = member.scalar()
         if not member:
@@ -37,14 +26,11 @@ async def save_photo_service(telegram_user_id: int, group_id: int, photo_url: st
         member.photo_url = photo_url
         await session.commit()
 
-async def save_location_service(telegram_user_id: int, group_id: int, lat: float = None, lon: float = None, city: str = None, country: str = None) -> None:
+async def save_location_service(user_id: int, group_id: int, lat: float = None, lon: float = None, city: str = None, country: str = None) -> None:
     async with AsyncSessionLocal() as session:
-        user_id = await get_internal_user_id(telegram_user_id, session)
-        if not user_id:
-            return
         member = await session.execute(select(GroupMember).where(GroupMember.user_id == user_id, GroupMember.group_id == group_id))
         member = member.scalar()
-        print(f"[save_location_service] telegram_user_id={telegram_user_id}, user_id={user_id}, group_id={group_id}, lat={lat}, lon={lon}, city={city}, country={country}")
+        print(f"[save_location_service] user_id={user_id}, group_id={group_id}, lat={lat}, lon={lon}, city={city}, country={country}")
         print(f"[save_location_service] member before: {member}")
         if member:
             if lat is not None and lon is not None:
@@ -57,11 +43,8 @@ async def save_location_service(telegram_user_id: int, group_id: int, lat: float
             await session.commit()
             print(f"[save_location_service] member after: {member}")
 
-async def is_onboarding_complete_service(telegram_user_id: int, group_id: int) -> bool:
+async def is_onboarding_complete_service(user_id: int, group_id: int) -> bool:
     async with AsyncSessionLocal() as session:
-        user_id = await get_internal_user_id(telegram_user_id, session)
-        if not user_id:
-            return False
         member = await session.execute(select(GroupMember).where(GroupMember.user_id == user_id, GroupMember.group_id == group_id))
         member = member.scalar()
         print(f"[is_onboarding_complete_service] member: {member}")
