@@ -275,24 +275,43 @@ async def myid_command(message: types.Message, state: FSMContext):
 @router.message(Command("addcreator"))
 async def add_creator_command(message: types.Message, state: FSMContext):
     args = message.text.strip().split()
-    if len(args) != 2 or not args[1].isdigit():
-        await message.answer("Usage: /addcreator <user_id>")
+    if len(args) != 2:
+        await message.answer("Usage: /addcreator <nickname>")
         return
     admin_telegram_id = os.getenv("ADMIN_USER_ID")
     if not admin_telegram_id or str(message.from_user.id) != str(admin_telegram_id):
         await message.answer("You are not authorized to use this command.")
         return
-    target_user_id = int(args[1])
-    async with AsyncSessionLocal() as session:
-        user = await session.execute(select(User).where(User.id == target_user_id))
-        user = user.scalar()
-        if not user:
-            await message.answer(f"User with id {target_user_id} does not exist.")
-            return
-        exists = await session.execute(select(GroupCreator).where(GroupCreator.user_id == user.id))
-        if exists.scalar():
-            await message.answer(f"User {target_user_id} is already a group creator.")
-            return
-        session.add(GroupCreator(user_id=user.id))
-        await session.commit()
-        await message.answer(f"User {target_user_id} added to group_creators.") 
+    target_nickname = args[1].lstrip("@")
+    from src.utils.redis import redis
+    # Получаем все int2tg:*
+    keys = await redis.keys("int2tg:*")
+    found = False
+    for key in keys:
+        internal_user_id = int(key.split(":")[-1])
+        telegram_user_id = await redis.get(key)
+        try:
+            user_obj = await bot.get_chat(int(telegram_user_id))
+            if user_obj.username and user_obj.username.lower() == target_nickname.lower():
+                # Нашли пользователя
+                async with AsyncSessionLocal() as session:
+                    from src.models import GroupCreator, User
+                    user = await session.execute(select(User).where(User.id == internal_user_id))
+                    user = user.scalar()
+                    if not user:
+                        user = User()
+                        session.add(user)
+                        await session.flush()
+                    exists = await session.execute(select(GroupCreator).where(GroupCreator.user_id == user.id))
+                    if exists.scalar():
+                        await message.answer(f"User @{target_nickname} is already a group creator.")
+                        return
+                    session.add(GroupCreator(user_id=user.id))
+                    await session.commit()
+                    await message.answer(f"User @{target_nickname} added to group_creators (internal id: {user.id}).")
+                    found = True
+                    break
+        except Exception as e:
+            continue
+    if not found:
+        await message.answer(f"User with nickname @{target_nickname} not found in runtime. Ask them to send /start to the bot first.") 
