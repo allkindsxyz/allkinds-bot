@@ -12,7 +12,7 @@ from src.db import AsyncSessionLocal
 from sqlalchemy import select
 from src.models import User, GroupMember, GroupCreator
 from src.keyboards.groups import get_user_keyboard, get_admin_keyboard, get_group_reply_keyboard
-from src.utils.redis import get_internal_user_id, set_telegram_mapping, update_ttl
+from src.utils.redis import get_internal_user_id, set_telegram_mapping, update_ttl, redis
 import os
 
 router = Router()
@@ -283,7 +283,7 @@ async def add_creator_command(message: types.Message, state: FSMContext):
         await message.answer("You are not authorized to use this command.")
         return
     telegram_id = int(args[1])
-    from src.utils.redis import get_internal_user_id, set_telegram_mapping
+    from src.utils.redis import get_internal_user_id, set_telegram_mapping, redis
     internal_user_id = await get_internal_user_id(telegram_id)
     from src.models import GroupCreator, User
     if not internal_user_id:
@@ -298,12 +298,22 @@ async def add_creator_command(message: types.Message, state: FSMContext):
             await session.commit()
             await message.answer(f"User {telegram_id} created and added to group_creators (internal id: {user.id}).")
             return
-    # Если пользователь уже есть, работаем как раньше
+    # Если internal_user_id есть, ищем пользователя в БД
     async with AsyncSessionLocal() as session:
         user = await session.execute(select(User).where(User.id == internal_user_id))
         user = user.scalar()
         if not user:
-            await message.answer(f"User with internal id {internal_user_id} not found in DB (unexpected error).")
+            # Mapping в Redis устарел — удаляем и пересоздаём пользователя
+            await redis.delete(f"tg2int:{telegram_id}")
+            await redis.delete(f"int2tg:{internal_user_id}")
+            user = User()
+            session.add(user)
+            await session.flush()
+            internal_user_id = user.id
+            await set_telegram_mapping(telegram_id, internal_user_id)
+            session.add(GroupCreator(user_id=user.id))
+            await session.commit()
+            await message.answer(f"User {telegram_id} mapping was stale. User recreated and added to group_creators (internal id: {user.id}).")
             return
         exists = await session.execute(select(GroupCreator).where(GroupCreator.user_id == user.id))
         if exists.scalar():
