@@ -30,6 +30,10 @@ target_metadata = Base.metadata
 print("[ALEMBIC DEBUG] DATABASE_URL:", os.getenv("DATABASE_URL"))
 print("[ALEMBIC DEBUG] repr(DATABASE_URL):", repr(os.getenv("DATABASE_URL")))
 
+db_url = os.getenv("DATABASE_URL")
+if db_url:
+    context.config.set_main_option("sqlalchemy.url", db_url)
+
 def run_migrations_offline() -> None:
     """Run migrations in 'offline' mode.
 
