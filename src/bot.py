@@ -1,4 +1,5 @@
 import os
+print("[DEBUG] DATABASE_URL:", os.getenv("DATABASE_URL"))
 import logging
 import asyncio
 from aiohttp import web
