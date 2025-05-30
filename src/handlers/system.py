@@ -285,18 +285,21 @@ async def add_creator_command(message: types.Message, state: FSMContext):
     telegram_id = int(args[1])
     from src.utils.redis import get_internal_user_id, set_telegram_mapping
     internal_user_id = await get_internal_user_id(telegram_id)
+    from src.models import GroupCreator, User
     if not internal_user_id:
-        # Создаём нового пользователя и mapping
+        # Создаём пользователя и сразу добавляем в GroupCreator в одной транзакции
         async with AsyncSessionLocal() as session:
-            from src.models import User
             user = User()
             session.add(user)
             await session.flush()
             internal_user_id = user.id
             await set_telegram_mapping(telegram_id, internal_user_id)
+            session.add(GroupCreator(user_id=user.id))
             await session.commit()
+            await message.answer(f"User {telegram_id} created and added to group_creators (internal id: {user.id}).")
+            return
+    # Если пользователь уже есть, работаем как раньше
     async with AsyncSessionLocal() as session:
-        from src.models import GroupCreator, User
         user = await session.execute(select(User).where(User.id == internal_user_id))
         user = user.scalar()
         if not user:
