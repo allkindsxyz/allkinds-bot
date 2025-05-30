@@ -13,7 +13,7 @@ from src.keyboards.groups import get_admin_keyboard, get_user_keyboard, go_to_gr
 from src.fsm.states import CreateGroup, JoinGroup
 from src.services.groups import (
     get_user_groups, is_group_creator, get_group_members, create_group_service,
-    join_group_by_code_service, leave_group_service, delete_group_service, switch_group_service, find_best_match, set_match_status
+    join_group_by_code_service, leave_group_service, delete_group_service, switch_group_service, find_best_match, set_match_status, get_group_balance
 )
 from src.constants import WELCOME_BONUS, MIN_ANSWERS_FOR_MATCH, POINTS_FOR_MATCH, POINTS_TO_CONNECT
 import asyncio
@@ -29,6 +29,7 @@ from src.texts.messages import (
     MATCH_FOUND, MATCH_NO_VALID, MATCH_AI_CHEMISTRY, MATCH_SHOW_AGAIN, MATCH_DONT_SHOW,
     QUESTION_LOAD_ANSWERED, NO_AVAILABLE_ANSWERED_QUESTIONS
 )
+from src.utils.redis import get_or_restore_internal_user_id, get_telegram_user_id
 
 router = Router()
 
@@ -39,7 +40,7 @@ async def ensure_admin_in_db():
         user = await session.execute(select(User).where(User.id == ADMIN_USER_ID))
         user = user.scalar()
         if not user:
-            user = User(id=ADMIN_USER_ID)
+            user = User()
             session.add(user)
             await session.flush()
         creator = await session.execute(select(GroupCreator).where(GroupCreator.user_id == user.id))
@@ -58,20 +59,23 @@ async def get_user_groups(user_id: int):
         return [{"id": g.id, "name": g.name} for g in groups]
 
 async def create_group(user_id: int, name: str, description: str):
-    from src.utils import generate_unique_invite_code
+    from src.utils.invite_code import generate_unique_invite_code
     invite_code = await generate_unique_invite_code()
     async with AsyncSessionLocal() as session:
         user = await session.execute(select(User).where(User.id == user_id))
         user = user.scalar()
         if not user:
-            user = User(id=user_id)
+            user = User()
             session.add(user)
             await session.flush()
         group = Group(name=name, description=description, invite_code=invite_code, creator_user_id=user.id)
         session.add(group)
         await session.flush()
-        member = GroupMember(user_id=user.id, group_id=group.id)
-        session.add(member)
+        member = await session.execute(select(GroupMember).where(GroupMember.user_id == user.id, GroupMember.group_id == group.id))
+        member = member.scalar()
+        if not member:
+            member = GroupMember(user_id=user.id, group_id=group.id)
+            session.add(member)
         await session.commit()
         return {"id": group.id, "name": group.name, "invite_code": group.invite_code}
 
@@ -84,7 +88,7 @@ async def join_group_by_code(user_id: int, code: str):
         user = await session.execute(select(User).where(User.id == user_id))
         user = user.scalar()
         if not user:
-            user = User(id=user_id)
+            user = User()
             session.add(user)
             await session.flush()
         member = await session.execute(select(GroupMember).where(GroupMember.user_id == user.id, GroupMember.group_id == group.id))
@@ -95,19 +99,84 @@ async def join_group_by_code(user_id: int, code: str):
             await session.commit()
         return {"id": group.id, "name": group.name}
 
-async def show_user_groups(message: types.Message, state: FSMContext) -> None:
+async def show_group_main_flow(message, user_id, group_id):
+    """
+    После welcome: показывает первый неотвеченный вопрос (или сообщение), а также кнопку Load answered questions, если есть ответы.
+    """
+    from src.services.questions import get_next_unanswered_question
+    from src.handlers.questions import send_question_to_user
+    from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+    from src.texts.messages import get_message, QUESTION_LOAD_ANSWERED, GROUPS_REVIEW_ANSWERED
+    from src.models import User, Answer, Question
+    from sqlalchemy import select
+    async with AsyncSessionLocal() as session:
+        user = await session.execute(select(User).where(User.id == user_id))
+        user = user.scalar()
+        # Считаем количество ответов
+        answers_count = await session.execute(
+            select(Answer).where(
+                Answer.user_id == user.id,
+                Answer.value.isnot(None),
+                Answer.question_id.in_(select(Question.id).where(Question.group_id == group_id, Question.is_deleted == 0))
+            )
+        )
+        answers_count = len(answers_count.scalars().all())
+        # Ищем первый неотвеченный вопрос
+        next_q = await get_next_unanswered_question(session, group_id, user.id)
+        if next_q:
+            await send_question_to_user(message.bot, user, next_q)
+        else:
+            await message.answer(get_message("GROUPS_NO_NEW_QUESTIONS", user=user))
+        # Кнопка Load answered questions — только если есть хотя бы один ответ
+        if answers_count > 0:
+            kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text=get_message(QUESTION_LOAD_ANSWERED, user=user), callback_data="load_answered_questions")]])
+            await message.answer(get_message(GROUPS_REVIEW_ANSWERED, user=user), reply_markup=kb)
+
+async def show_group_welcome_and_question(message, user_id, group_id):
+    """
+    Welcome-сообщение при входе в группу: показывает приветствие, баланс, кнопку мэтча (ReplyKeyboard), затем историю/вопросы.
+    """
+    from src.keyboards.groups import get_group_reply_keyboard
+    from src.services.groups import get_group_balance, get_user_groups
+    from src.texts.messages import get_message, GROUPS_FIND_MATCH
+    from src.models import User
+    from sqlalchemy import select
+    async with AsyncSessionLocal() as session:
+        user = await session.execute(select(User).where(User.id == user_id))
+        user = user.scalar()
+        groups = await get_user_groups(user_id)
+        group = next((g for g in groups if g["id"] == group_id), None)
+        group_name = group["name"] if group else "this group"
+        balance = await get_group_balance(user_id, group_id)
+    # Welcome + кнопка мэтча
+    from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
+    match_kb = ReplyKeyboardMarkup(
+        keyboard=[[KeyboardButton(text=get_message(BTN_WHO_IS_VIBING, user=user, points=POINTS_FOR_MATCH))]],
+        resize_keyboard=True,
+        one_time_keyboard=False
+    )
+    await message.answer(
+        get_message(GROUPS_FIND_MATCH, user=user, group_name=group_name, balance=balance),
+        reply_markup=match_kb
+    )
+    await show_group_main_flow(message, user_id, group_id)
+
+async def show_user_groups(message, state, is_admin=False):
     """
     Handler: Показывает пользователю его группы, используя только сервисные методы для получения данных.
     Генерация клавиатур и отправка сообщений — только здесь.
     """
-    user_id = message.from_user.id
+    data = await state.get_data()
+    user_id = data.get('internal_user_id')
+    if not user_id:
+        await message.answer(get_message("Please start the bot to use this feature.", user=message.from_user))
+        return
     groups = await get_user_groups(user_id)
     async with AsyncSessionLocal() as session:
         user = await session.execute(select(User).where(User.id == user_id))
         user = user.scalar()
         if not groups:
-            is_creator = await is_group_creator(user_id)
-            if is_creator:
+            if is_admin:
                 kb = get_admin_keyboard([], user)
             else:
                 kb = get_user_keyboard(user)
@@ -137,7 +206,7 @@ async def show_user_groups(message: types.Message, state: FSMContext) -> None:
         kb.inline_keyboard.append([
             types.InlineKeyboardButton(text=get_message(BTN_SWITCH_TO, user=user, group_name=g['name']), callback_data=f"switch_to_group_{g['id']}")
         ])
-    if await is_group_creator(user_id):
+    if is_admin:
         kb.inline_keyboard.append([
             types.InlineKeyboardButton(text=get_message(BTN_CREATE_GROUP, user=user), callback_data="create_new_group")
         ])
@@ -192,10 +261,12 @@ async def clear_mygroups_messages(message, state):
 async def cb_confirm_leave_group(callback: types.CallbackQuery, state: FSMContext):
     await clear_mygroups_messages(callback.message, state)
     group_id = int(callback.data.split("_")[-1])
-    user_id = callback.from_user.id
-    async with AsyncSessionLocal() as session:
-        user = await session.execute(select(User).where(User.id == user_id))
-        user = user.scalar()
+    data = await state.get_data()
+    user_id = data.get('internal_user_id')
+    if not user_id:
+        await callback.message.answer(get_message("Please start the bot to use this feature.", user=callback.from_user))
+        await callback.answer()
+        return
     groups = await get_user_groups(user_id)
     group = next((g for g in groups if g["id"] == group_id), None)
     group_name = group["name"] if group else "this group"
@@ -218,10 +289,12 @@ async def cb_leave_group_cancel(callback: types.CallbackQuery, state: FSMContext
 async def cb_confirm_delete_group(callback: types.CallbackQuery, state: FSMContext):
     await clear_mygroups_messages(callback.message, state)
     group_id = int(callback.data.split("_")[-1])
-    user_id = callback.from_user.id
-    async with AsyncSessionLocal() as session:
-        user = await session.execute(select(User).where(User.id == user_id))
-        user = user.scalar()
+    data = await state.get_data()
+    user_id = data.get('internal_user_id')
+    if not user_id:
+        await callback.message.answer(get_message("Please start the bot to use this feature.", user=callback.from_user))
+        await callback.answer()
+        return
     from src.services.groups import get_user_groups
     groups = await get_user_groups(user_id)
     group = next((g for g in groups if g["id"] == group_id), None)
@@ -244,16 +317,19 @@ async def cb_delete_group_cancel(callback: types.CallbackQuery, state: FSMContex
 @router.callback_query(F.data.startswith("delete_group_yes_"))
 async def cb_delete_group_yes(callback: types.CallbackQuery, state: FSMContext):
     group_id = int(callback.data.split("_")[-1])
-    user_id = callback.from_user.id
-    async with AsyncSessionLocal() as session:
-        user = await session.execute(select(User).where(User.id == user_id))
-        user = user.scalar()
+    data = await state.get_data()
+    user_id = data.get('internal_user_id')
+    if not user_id:
+        await callback.message.answer(get_message("Please start the bot to use this feature.", user=callback.from_user))
+        await callback.answer()
+        return
     # Удаляем группу через сервис
     result = await delete_group_service(group_id)
     if result["ok"]:
         await callback.message.answer(get_message("Группа успешно удалена.", user=user))
         await clear_mygroups_messages(callback.message, state)
         await state.clear()
+        await state.update_data(internal_user_id=user_id)
     else:
         await callback.message.answer(get_message("Ошибка при удалении группы.", user=user))
     await callback.answer()
@@ -262,7 +338,13 @@ async def cb_delete_group_yes(callback: types.CallbackQuery, state: FSMContext):
 
 @router.callback_query(F.data == "create_new_group")
 async def cb_create_group(callback: types.CallbackQuery, state: FSMContext):
-    is_creator = await is_group_creator(callback.from_user.id)
+    data = await state.get_data()
+    user_id = data.get('internal_user_id')
+    if not user_id:
+        await callback.message.answer(get_message("Please start the bot to use this feature.", user=callback.from_user))
+        await callback.answer()
+        return
+    is_creator = await is_group_creator(user_id)
     if not is_creator:
         await callback.message.answer(get_message("You are not allowed to create groups.", user=callback.from_user))
         await callback.answer()
@@ -273,9 +355,14 @@ async def cb_create_group(callback: types.CallbackQuery, state: FSMContext):
 
 @router.message(CreateGroup.name)
 async def group_name_step(message: types.Message, state: FSMContext):
+    data = await state.get_data()
+    user_id = data.get('internal_user_id')
+    if not user_id:
+        await message.answer(get_message("Please start the bot to use this feature.", user=message.from_user))
+        return
     name = message.text.strip()
     async with AsyncSessionLocal() as session:
-        user = await session.execute(select(User).where(User.id == message.from_user.id))
+        user = await session.execute(select(User).where(User.id == user_id))
         user = user.scalar()
     if not name:
         await message.answer(get_message(GROUPS_NAME_EMPTY, user=user))
@@ -286,116 +373,41 @@ async def group_name_step(message: types.Message, state: FSMContext):
 
 @router.message(CreateGroup.description)
 async def group_desc_step(message: types.Message, state: FSMContext):
+    data = await state.get_data()
+    user_id = data.get('internal_user_id')
+    if not user_id:
+        await message.answer(get_message("Please start the bot to use this feature.", user=message.from_user))
+        return
     desc = message.text.strip()
     async with AsyncSessionLocal() as session:
-        user = await session.execute(select(User).where(User.id == message.from_user.id))
+        user = await session.execute(select(User).where(User.id == user_id))
         user = user.scalar()
     if not desc:
         await message.answer(get_message(GROUPS_DESC_EMPTY, user=user))
         return
     data = await state.get_data()
-    group = await create_group_service(message.from_user.id, data["name"], desc)
+    group = await create_group_service(user_id, data["name"], desc)
     bot_info = await bot.get_me()
     deep_link = f"https://t.me/{bot_info.username}?start={group['invite_code']}"
     await message.answer(
         get_message(GROUPS_CREATED, user=user, group_name=group["name"], invite_code=group["invite_code"], deep_link=deep_link),
         reply_markup=go_to_group_keyboard(group["id"], group["name"], user))
     await state.clear()
-
-async def show_group_welcome_and_question(message, user_id, group_id):
-    import logging
-    try:
-        print(f"[DEBUG] show_group_welcome_and_question called: user_id={user_id}, group_id={group_id}")
-        from src.services.groups import get_group_balance
-        from src.services.groups import is_onboarded
-        from src.services.groups import get_user_groups
-        from src.services.questions import get_next_unanswered_question
-        from src.handlers.questions import send_question_to_user
-        from src.loader import bot
-        from sqlalchemy import select
-        from src.db import AsyncSessionLocal
-        from src.models import User
-        from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
-        async with AsyncSessionLocal() as session:
-            user = await session.execute(select(User).where(User.id == user_id))
-            user = user.scalar()
-            print(f"[DEBUG] loaded user: {user}")
-        onboarded = await is_onboarded(user_id, group_id)
-        print(f"[DEBUG] onboarded={onboarded}")
-        if onboarded:
-            async with AsyncSessionLocal() as session:
-                print(f"[DEBUG] in onboarded block, user={user}, group_id={group_id}")
-                balance = await get_group_balance(user_id, group_id)
-                groups = await get_user_groups(user_id)
-                print(f"[DEBUG] groups={groups}")
-                group = next((g for g in groups if g["id"] == group_id), None)
-                print(f"[DEBUG] group={group}")
-                group_name = group["name"] if group else "this group"
-                # --- Welcome-back с мэтч-кнопкой ---
-                await message.answer(
-                    get_message(f"Welcome back to {group_name}. Your balance is {balance}💎 points.", user=user),
-                    reply_markup=get_group_reply_keyboard(user)
-                )
-                # --- Кнопка истории ---
-                any_answers = await session.execute(
-                    select(Answer).where(
-                        Answer.user_id == user.id,
-                        Answer.question_id.in_(select(Question.id).where(Question.group_id == group_id))
-                    )
-                )
-                any_answers = any_answers.scalars().all()
-                valid_answers = await session.execute(
-                    select(Answer).where(
-                        Answer.user_id == user.id,
-                        Answer.value.isnot(None),
-                        Answer.question_id.in_(select(Question.id).where(Question.group_id == group_id, Question.is_deleted == 0))
-                    )
-                )
-                valid_answers = valid_answers.scalars().all()
-                print(f"[DEBUG] any_answers: {len(any_answers)}, valid_answers: {len(valid_answers)} for user_id={user.id}, group_id={group_id}")
-                print(f"[DEBUG] any_answers content: {any_answers}")
-                print(f"[DEBUG] valid_answers content: {valid_answers}")
-                if len(any_answers) > 0:
-                    kb_hist = types.InlineKeyboardMarkup(inline_keyboard=[[types.InlineKeyboardButton(text=get_message(QUESTION_LOAD_ANSWERED, user=user), callback_data="load_answered_questions")]])
-                    if valid_answers:
-                        msg = await message.answer(get_message(GROUPS_REVIEW_ANSWERED, user=user), reply_markup=kb_hist)
-                        print(f"[DEBUG] Sent answered questions msg_id={msg.message_id}")
-                    else:
-                        msg = await message.answer(get_message(NO_AVAILABLE_ANSWERED_QUESTIONS, user=user), reply_markup=kb_hist)
-                        print(f"[DEBUG] Sent no available answered questions msg_id={msg.message_id}")
-                # --- Вопросы ---
-                answers_count = await session.execute(
-                    select(Answer).where(
-                        Answer.user_id == user.id,
-                        Answer.value.isnot(None),
-                        Answer.question_id.in_(select(Question.id).where(Question.group_id == group_id, Question.is_deleted == 0))
-                    )
-                )
-                answers_count = len(answers_count.scalars().all())
-                next_q = await get_next_unanswered_question(session, group_id, user.id)
-                if next_q:
-                    await send_question_to_user(bot, user, next_q)
-                else:
-                    await message.answer(get_message(GROUPS_NO_NEW_QUESTIONS, user=user))
-            # Клавиатура мэтча уже отправлена с welcome-back
-        else:
-            await message.answer(get_message(GROUPS_PROFILE_SETUP, user=user), reply_markup=types.ReplyKeyboardRemove())
-            from src.fsm.states import Onboarding
-            from aiogram.fsm.context import FSMContext
-            state = FSMContext(message.bot, message.chat.id, message.from_user.id)
-            await state.update_data(group_id=group_id)
-            await state.set_state(Onboarding.nickname)
-    except Exception as e:
-        logging.exception("Ошибка в show_group_welcome_and_question")
-        raise
+    await state.update_data(internal_user_id=user.id)
 
 @router.callback_query(F.data.startswith("switch_to_group_"))
 async def cb_switch_to_group(callback: types.CallbackQuery, state: FSMContext):
     group_id = int(callback.data.split("_")[-1])
-    user_id = callback.from_user.id
+    data = await state.get_data()
+    user_id = data.get('internal_user_id')
+    if not user_id:
+        await callback.message.answer(get_message("Please start the bot to use this feature.", user=callback.from_user))
+        await callback.answer()
+        return
     result = await switch_group_service(user_id, group_id)
     if result["ok"]:
         await callback.message.delete()
+        # Показываем welcome/историю/мэтч-кнопку для выбранной группы
         await show_group_welcome_and_question(callback.message, user_id, group_id)
         await callback.answer()
     else:
@@ -410,9 +422,12 @@ async def cb_switch_to_group(callback: types.CallbackQuery, state: FSMContext):
 
 @router.callback_query(F.data == "join_another_group_with_code")
 async def cb_join_group(callback: types.CallbackQuery, state: FSMContext):
-    async with AsyncSessionLocal() as session:
-        user = await session.execute(select(User).where(User.id == callback.from_user.id))
-        user = user.scalar()
+    data = await state.get_data()
+    user_id = data.get('internal_user_id')
+    if not user_id:
+        await callback.message.answer(get_message("Please start the bot to use this feature.", user=callback.from_user))
+        await callback.answer()
+        return
     await callback.message.answer(get_message("Enter the 5-character invite code:", user=user), reply_markup=types.ReplyKeyboardRemove())
     from src.fsm.states import JoinGroup
     await state.set_state(JoinGroup.code)
@@ -420,14 +435,19 @@ async def cb_join_group(callback: types.CallbackQuery, state: FSMContext):
 
 @router.message(JoinGroup.code)
 async def process_invite_code(message: types.Message, state: FSMContext):
+    data = await state.get_data()
+    user_id = data.get('internal_user_id')
+    if not user_id:
+        await message.answer(get_message("Please start the bot to use this feature.", user=message.from_user))
+        return
     code = message.text.strip()
     async with AsyncSessionLocal() as session:
-        user = await session.execute(select(User).where(User.id == message.from_user.id))
+        user = await session.execute(select(User).where(User.id == user_id))
         user = user.scalar()
     if not code or len(code) != 5:
         await message.answer(get_message(GROUPS_JOIN_INVALID_CODE, user=user))
         return
-    group = await join_group_by_code_service(message.from_user.id, code)
+    group = await join_group_by_code_service(user_id, code)
     if not group:
         await message.answer(get_message(GROUPS_JOIN_NOT_FOUND, user=user))
         return
@@ -438,13 +458,17 @@ async def process_invite_code(message: types.Message, state: FSMContext):
         await state.set_state(Onboarding.nickname)
         return
     await message.answer(get_message(GROUPS_JOINED, user=user, group_name=group["name"], bonus=WELCOME_BONUS), reply_markup=go_to_group_keyboard(group["id"], group["name"], user))
-    # Клавиатура мэтча будет показана после входа в группу
     await state.clear()
+    await state.update_data(internal_user_id=user.id)
 
 @router.callback_query(F.data.startswith("find_match_"))
 async def cb_find_match(callback: types.CallbackQuery, state: FSMContext):
     group_id = int(callback.data.split("_")[-1])
-    user_id = callback.from_user.id
+    data = await state.get_data()
+    user_id = data.get('internal_user_id')
+    if not user_id:
+        await callback.answer(get_message(MATCH_NO_VALID, user=callback.from_user, show_alert=True))
+        return
     from src.models import User, Answer, GroupMember
     from sqlalchemy import select
     from src.db import AsyncSessionLocal
@@ -452,7 +476,7 @@ async def cb_find_match(callback: types.CallbackQuery, state: FSMContext):
         user = await session.execute(select(User).where(User.id == user_id))
         user = user.scalar()
         if not user:
-            await callback.answer(get_message(MATCH_NO_VALID, user=user, show_alert=True))
+            await callback.answer(get_message(MATCH_NO_VALID, user=callback.from_user, show_alert=True))
             return
         # Считаем количество ответов пользователя в группе
         answers_count = await session.execute(
@@ -465,6 +489,8 @@ async def cb_find_match(callback: types.CallbackQuery, state: FSMContext):
         answers_count = len(answers_count.scalars().all())
         member = await session.execute(select(GroupMember).where(GroupMember.user_id == user.id, GroupMember.group_id == group_id))
         member = member.scalar()
+        import logging
+        logging.warning(f"[cb_find_match] user_id={user.id}, group_id={group_id}, member={member}, balance={getattr(member, 'balance', None)}")
         if not member or member.balance < POINTS_FOR_MATCH:
             await callback.message.answer(get_message(f"Not enough points for match. Your balance: {member.balance if member else 0}.", user=user))
             return
@@ -473,8 +499,13 @@ async def cb_find_match(callback: types.CallbackQuery, state: FSMContext):
             return
         # Поиск мэтча
         match = await find_best_match(user_id, group_id)
-        if not match or not match.get('telegram_user_id'):
-            await callback.answer(get_message(MATCH_NO_VALID, user=user, show_alert=True))
+        if match and match.get('not_enough_common'):
+            await callback.message.answer(get_message("В группе есть другие участники, но у вас пока нет 3+ общих отвеченных вопросов. Ответьте на большее количество вопросов!", user=user))
+            await callback.answer(get_message(MATCH_NO_VALID, user=callback.from_user, show_alert=True))
+            return
+        if not match or not match.get('user_id'):
+            await callback.message.answer(get_message("В группе пока нет других участников для мэтча.", user=user))
+            await callback.answer(get_message(MATCH_NO_VALID, user=callback.from_user, show_alert=True))
             return
         # Списываем баллы
         member.balance -= POINTS_FOR_MATCH
@@ -563,13 +594,16 @@ async def handle_vibing_button(message: types.Message, state: FSMContext):
     import logging
     try:
         await state.update_data(vibing_msg_id=message.message_id)
-        async with AsyncSessionLocal() as session:
-            user = await session.execute(select(User).where(User.id == message.from_user.id))
-            user = user.scalar()
-            group_id = user.current_group_id if user else None
-        if not group_id:
-            await message.answer(get_message("You are not in a group.", user=user))
+        data = await state.get_data()
+        user_id = data.get('internal_user_id')
+        if not user_id:
+            await message.answer(get_message("Please start the bot to use this feature.", user=message.from_user))
             return
+        from src.services.groups import get_user_groups
+        async with AsyncSessionLocal() as session:
+            user = await session.execute(select(User).where(User.id == user_id))
+            user = user.scalar()
+            group_id = user.current_group_id
         from src.handlers.groups import cb_find_match
         class DummyCallback:
             def __init__(self, message, user_id, group_id):
@@ -587,16 +621,24 @@ async def handle_vibing_button(message: types.Message, state: FSMContext):
 
 @router.callback_query(F.data.startswith("match_chat_"))
 async def cb_match_chat(callback: types.CallbackQuery, state: FSMContext):
-    user_id = callback.from_user.id
+    internal_user_id = await get_or_restore_internal_user_id(state, callback.from_user.id)
+    if not internal_user_id:
+        await callback.message.answer(get_message("Please start the bot to use this feature.", user=callback.from_user))
+        await callback.answer()
+        return
     match_user_id = int(callback.data.split("_")[-1])
     from src.models import MatchStatus
     async with AsyncSessionLocal() as session:
-        user = await session.execute(select(User).where(User.id == user_id))
+        user = await session.execute(select(User).where(User.id == internal_user_id))
         user = user.scalar()
         group_id = user.current_group_id if user else None
+        if not user or not group_id:
+            await callback.message.answer(get_message("Please start the bot to use this feature.", user=callback.from_user))
+            await callback.answer()
+            return
         member = await session.execute(select(GroupMember).where(GroupMember.user_id == user.id, GroupMember.group_id == group_id))
         member = member.scalar()
-        print(f"[DEBUG] cb_match_chat: user_id={user_id}, match_user_id={match_user_id}, group_id={group_id}")
+        print(f"[DEBUG] cb_match_chat: user_id={internal_user_id}, match_user_id={match_user_id}, group_id={group_id}")
         match_user = await session.execute(select(User).where(User.id == match_user_id))
         match_user = match_user.scalar()
         print(f"[DEBUG] cb_match_chat: match_user={match_user}")
@@ -604,9 +646,13 @@ async def cb_match_chat(callback: types.CallbackQuery, state: FSMContext):
             await callback.message.answer(get_message("Match user not found.", user=user))
             await callback.answer()
             return
-        # --- ВАЖНО: для диплинка используем именно telegram_user_id, а не внутренние id ---
-        initiator_telegram_user_id = user.telegram_user_id
-        match_telegram_user_id = match_user.telegram_user_id
+        # --- Получаем telegram_user_id через Redis ---
+        initiator_telegram_user_id = await get_telegram_user_id(user.id)
+        match_telegram_user_id = await get_telegram_user_id(match_user.id)
+        if not initiator_telegram_user_id or not match_telegram_user_id:
+            await callback.message.answer(get_message("Ошибка: не удалось получить Telegram ID для чата.", user=user))
+            await callback.answer()
+            return
         obj1 = await session.execute(select(MatchStatus).where(
             MatchStatus.user_id == user.id,
             MatchStatus.group_id == group_id,
@@ -665,16 +711,22 @@ async def cb_match_chat(callback: types.CallbackQuery, state: FSMContext):
         match_user = await session.execute(select(User).where(User.id == match_user_id))
         match_user = match_user.scalar()
         if match_user:
-            # Для второго пользователя также используем telegram_user_id
-            param2 = quote(f"match_{match_telegram_user_id}_{initiator_telegram_user_id}")
-            link2 = f"https://t.me/{ALLKINDS_CHAT_BOT_USERNAME}?start={param2}"
-            kb2 = types.InlineKeyboardMarkup(inline_keyboard=[
-                [types.InlineKeyboardButton(text=get_message("Go to Allkinds Chat Bot", user=match_user), url=link2)]
-            ])
-            try:
-                await callback.bot.send_message(match_user.telegram_user_id, get_message("You have a new match! Click below to start your private chat:", user=match_user), reply_markup=kb2)
-            except Exception:
-                pass
+            # Для второго пользователя также используем telegram_user_id через Redis
+            match_telegram_user_id2 = await get_telegram_user_id(match_user.id)
+            if match_telegram_user_id2:
+                param2 = quote(f"match_{match_telegram_user_id}_{initiator_telegram_user_id}")
+                link2 = f"https://t.me/{ALLKINDS_CHAT_BOT_USERNAME}?start={param2}"
+                kb2 = types.InlineKeyboardMarkup(inline_keyboard=[
+                    [types.InlineKeyboardButton(text=get_message("Go to Allkinds Chat Bot", user=match_user), url=link2)]
+                ])
+                try:
+                    await callback.bot.send_message(match_telegram_user_id2, get_message("You have a new match! Click below to start your private chat:", user=match_user), reply_markup=kb2)
+                except Exception as e:
+                    import logging
+                    logging.error(f"[cb_match_chat] Failed to send match notification to user_id={match_user.id}: {e}")
+            else:
+                import logging
+                logging.error(f"[cb_match_chat] No telegram_user_id in Redis for user_id={match_user.id}")
     await asyncio.sleep(5)
     try:
         await notif.delete()

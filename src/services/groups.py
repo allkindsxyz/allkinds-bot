@@ -5,7 +5,7 @@ from src.keyboards.groups import get_admin_keyboard, get_user_keyboard, get_grou
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 import os, logging
 from sqlalchemy import select, func
-from src.utils import generate_unique_invite_code
+from src.utils.invite_code import generate_unique_invite_code
 from src.constants import WELCOME_BONUS
 
 ADMIN_USER_ID = int(os.getenv('ADMIN_USER_ID', 0))
@@ -16,7 +16,7 @@ async def ensure_admin_in_db() -> None:
         user = await session.execute(select(User).where(User.id == ADMIN_USER_ID))
         user = user.scalar()
         if not user:
-            user = User(id=ADMIN_USER_ID)
+            user = User()
             session.add(user)
             await session.flush()
         creator = await session.execute(select(GroupCreator).where(GroupCreator.user_id == user.id))
@@ -169,13 +169,17 @@ async def create_group_service(user_id: int, name: str, description: str) -> dic
         user = await session.execute(select(User).where(User.id == user_id))
         user = user.scalar()
         if not user:
-            user = User(id=user_id)
+            user = User()
             session.add(user)
             await session.flush()
         group = Group(name=name, description=description, invite_code=invite_code, creator_user_id=user.id)
         session.add(group)
-        member = GroupMember(user_id=user.id, group_id=group.id)
-        session.add(member)
+        await session.flush()
+        member = await session.execute(select(GroupMember).where(GroupMember.user_id == user.id, GroupMember.group_id == group.id))
+        member = member.scalar()
+        if not member:
+            member = GroupMember(user_id=user.id, group_id=group.id)
+            session.add(member)
         user.current_group_id = group.id
         await session.commit()
         return {"id": group.id, "name": group.name, "invite_code": group.invite_code}
@@ -190,7 +194,7 @@ async def join_group_by_code_service(user_id: int, code: str) -> dict | None:
         user = await session.execute(select(User).where(User.id == user_id))
         user = user.scalar()
         if not user:
-            user = User(id=user_id)
+            user = User()
             session.add(user)
             await session.flush()
         member = await session.execute(select(GroupMember).where(GroupMember.user_id == user.id, GroupMember.group_id == group.id))
@@ -200,7 +204,6 @@ async def join_group_by_code_service(user_id: int, code: str) -> dict | None:
             session.add(member)
             user.current_group_id = group.id
             await session.commit()
-            # Проверяем статус онбординга
             onboarded = await is_onboarded(user_id, group.id)
             if not onboarded:
                 return {"id": group.id, "name": group.name, "needs_onboarding": True}
@@ -297,12 +300,15 @@ async def find_best_match(user_id: int, group_id: int, exclude_user_ids: list[in
         # Получаем всех других участников группы
         members = await session.execute(select(GroupMember).where(GroupMember.group_id == group_id, GroupMember.user_id != user.id))
         members = members.scalars().all()
+        if not members:
+            return None
         # Считаем количество валидных пользователей для мэтча
         valid_users_count = 0
         best_match = None
         best_score = -1
         max_distance = 4
         best_common_questions = 0
+        not_enough_common = False
         for member in members:
             if member.user_id in exclude_user_ids:
                 continue
@@ -326,6 +332,7 @@ async def find_best_match(user_id: int, group_id: int, exclude_user_ids: list[in
                     total += 1
                     dist_sum += abs(uval - mval)
             if total < 3:
+                not_enough_common = True
                 continue  # слишком мало общих вопросов
             valid_users_count += 1
             similarity = 1 - (dist_sum / (max_distance * total))
@@ -346,6 +353,8 @@ async def find_best_match(user_id: int, group_id: int, exclude_user_ids: list[in
                 "common_questions": best_common_questions,
                 "valid_users_count": valid_users_count
             }
+        if not_enough_common:
+            return {"not_enough_common": True}
         return None
 
 async def set_match_status(user_id: int, group_id: int, match_user_id: int, status: str):

@@ -9,9 +9,12 @@ async def save_nickname_service(user_id: int, group_id: int, nickname: str) -> N
         member = member.scalar()
         if not member:
             print(f"[save_nickname_service] member not found, creating new GroupMember for user_id={user_id}, group_id={group_id}, nickname={nickname}")
-            member = GroupMember(user_id=user_id, group_id=group_id, nickname=nickname)
-            session.add(member)
-            await session.flush()
+            exists = await session.execute(select(GroupMember).where(GroupMember.user_id == user_id, GroupMember.group_id == group_id))
+            exists = exists.scalar()
+            if not exists:
+                member = GroupMember(user_id=user_id, group_id=group_id, nickname=nickname)
+                session.add(member)
+                await session.flush()
         else:
             member.nickname = nickname
         await session.commit()

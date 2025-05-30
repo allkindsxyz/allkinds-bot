@@ -15,6 +15,11 @@ class User(Base):
     created_groups = relationship('Group', back_populates='creator', foreign_keys='Group.creator_user_id')
     # current_group = relationship('Group', foreign_keys=[current_group_id])  # если потребуется
 
+    # Runtime-only field (not persisted in DB)
+    def __init__(self, *args, telegram_user_id=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.telegram_user_id = telegram_user_id
+
 class Group(Base):
     __tablename__ = 'groups'
     id = Column(Integer, primary_key=True)

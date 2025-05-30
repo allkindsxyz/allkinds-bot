@@ -25,7 +25,7 @@ MESSAGES = {
         "GROUPS_NO_NEW_QUESTIONS": "🤷‍♂️ No new questions yet. Want to ask one?",
         "GROUPS_PROFILE_SETUP": "🔧 Time to personalise—enter your nickname:",
         "GROUPS_REVIEW_ANSWERED": "🔍 Here are your answered questions:",
-        "GROUPS_FIND_MATCH": "⚡ Who Matches You Most?",
+        "GROUPS_FIND_MATCH": "👋 Welcome back to {group_name}! Your balance: {balance}💎",
         "GROUPS_SELECT": "👉 Which group do you want to switch to?",
         "GROUPS_WELCOME_ADMIN": "👋 Hey admin! Ready to manage your crew?",
         "GROUPS_WELCOME": "👋 Welcome to Allkinds! Enter a code to join.",
@@ -76,6 +76,9 @@ MESSAGES = {
         "NO_AVAILABLE_ANSWERED_QUESTIONS": "🫥 You answered some Qs, but they were deleted—nothing to review.",
         "UNANSWERED_QUESTIONS_MSG": "🕑 You have <b>{count}</b> unanswered question(s) left.",
         "BTN_LOAD_UNANSWERED": "🔄 Load unanswered questions",
+        "TOKEN_EXPIRE_REMINDER": "⏳ Your token is about to expire. Click the button to extend your account.",
+        "TOKEN_EXTEND": "🔄 Extend",
+        "TOKEN_EXTENDED": "✅ Your token has been extended.",
     },
     "ru": {
         # --- Onboarding ---
@@ -101,7 +104,7 @@ MESSAGES = {
         "GROUPS_NO_NEW_QUESTIONS": "🤷‍♂️ Новых вопросов пока нет. Хочешь задать свой?",
         "GROUPS_PROFILE_SETUP": "🔧 Давай настроим профиль — введи свой ник:",
         "GROUPS_REVIEW_ANSWERED": "🔍 Вот твои ответы на вопросы:",
-        "GROUPS_FIND_MATCH": "⚡ Кто лучше всего совпадает с тобой?",
+        "GROUPS_FIND_MATCH": "👋 С возвращением в «{group_name}»! Ваш баланс: {balance}💎",
         "GROUPS_SELECT": "👉 На какую группу хочешь переключиться?",
         "GROUPS_WELCOME_ADMIN": "👋 Привет, админ! Готов управлять своей командой?",
         "GROUPS_WELCOME": "👋 Добро пожаловать в Allkinds! Введи код, чтобы присоединиться.",
@@ -152,6 +155,9 @@ MESSAGES = {
         "NO_AVAILABLE_ANSWERED_QUESTIONS": "🫥 Ты отвечал на вопросы, но их удалили — нечего просматривать.",
         "UNANSWERED_QUESTIONS_MSG": "🕑 У вас осталось <b>{count}</b> неотвеченных вопрос(а/ов).",
         "BTN_LOAD_UNANSWERED": "🔄 Показать неотвеченные",
+        "TOKEN_EXPIRE_REMINDER": "⏳ Твой токен вот-вот истечет. Нажми на кнопку, чтобы продлить свой эккаунт.",
+        "TOKEN_EXTEND": "🔄 Продлить",
+        "TOKEN_EXTENDED": "✅ Ваш токен обновлен.",
     },
 }
 
@@ -239,4 +245,8 @@ BTN_WHO_IS_VIBING = "BTN_WHO_IS_VIBING"
 NO_AVAILABLE_ANSWERED_QUESTIONS = "NO_AVAILABLE_ANSWERED_QUESTIONS"
 
 UNANSWERED_QUESTIONS_MSG = "UNANSWERED_QUESTIONS_MSG"
-BTN_LOAD_UNANSWERED = "BTN_LOAD_UNANSWERED" 
+BTN_LOAD_UNANSWERED = "BTN_LOAD_UNANSWERED"
+
+TOKEN_EXPIRE_REMINDER = "TOKEN_EXPIRE_REMINDER"
+TOKEN_EXTEND = "TOKEN_EXTEND"
+TOKEN_EXTENDED = "TOKEN_EXTENDED" 

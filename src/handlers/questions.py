@@ -23,6 +23,7 @@ from src.texts.messages import (
     QUESTION_DELETE, UNANSWERED_QUESTIONS_MSG, BTN_LOAD_UNANSWERED
 )
 import logging
+from src.utils.redis import get_telegram_user_id, get_or_restore_internal_user_id
 
 router = Router()
 
@@ -33,13 +34,17 @@ async def handle_new_question(message: types.Message, state: FSMContext):
     """Создание нового вопроса: сохраняем вопрос, начисляем баллы автору."""
     import asyncio
     text = message.text.strip()
+    data = await state.get_data()
+    user_id = data.get('internal_user_id')
+    if not user_id:
+        await message.answer(get_message("Please start the bot to use this feature.", user=message.from_user))
+        return
     async with AsyncSessionLocal() as session:
-        user = await session.execute(select(User).where(User.id == message.from_user.id))
+        user = await session.execute(select(User).where(User.id == user_id))
         user = user.scalar()
     if len(text) < 5:
         await message.answer(get_message(QUESTION_TOO_SHORT, user=user))
         return
-    user_id = message.from_user.id
     async with AsyncSessionLocal() as session:
         user = await session.execute(select(User).where(User.id == user_id))
         user = user.scalar()
@@ -65,51 +70,52 @@ async def handle_new_question(message: types.Message, state: FSMContext):
         if member:
             member.balance += POINTS_FOR_NEW_QUESTION
         await session.commit()
-        # Удаляем исходное сообщение пользователя (вопрос без кнопок)
         try:
             await message.delete()
         except Exception:
             pass
-        # Отправляем сообщение о добавлении вопроса и удаляем его через 1 секунду
         info_msg = await message.answer(get_message(QUESTION_ADDED, user=user, points=POINTS_FOR_NEW_QUESTION))
         await asyncio.sleep(1)
         try:
             await info_msg.delete()
         except Exception:
             pass
-        # Сразу показываем вопрос автору с кнопками ответов
         from src.handlers.questions import send_question_to_user
         await send_question_to_user(message.bot, user, q)
-        # Пуш-уведомления всем участникам группы (кроме автора)
+    # --- Рассылка другим участникам после коммита ---
+    async with AsyncSessionLocal() as session:
         group_members = await session.execute(select(GroupMember, User).join(User).where(GroupMember.group_id == user.current_group_id))
         group_members = group_members.all()
         for gm, u in group_members:
             if u.id == user.id:
-                continue  # не отправляем автору
+                continue
             try:
                 await send_question_to_user(message.bot, u, q)
-            except Exception:
-                pass
+            except Exception as e:
+                logging.error(f"[handle_new_question] Failed to send question to user_id={u.id}: {e}")
 
 @router.callback_query(F.data.startswith("answer_"))
 async def cb_answer_question(callback: types.CallbackQuery, state: FSMContext):
     parts = callback.data.split("_")
     qid = int(parts[1])
+    user_id = await get_or_restore_internal_user_id(state, callback.from_user.id)
+    if not user_id:
+        await callback.answer(get_message("Please start the bot to use this feature.", user=callback.from_user), show_alert=True)
+        return
     try:
         value = int(parts[2])
     except Exception:
         logging.error(f"[cb_answer_question] Invalid answer value (not int): {parts[2]}")
         async with AsyncSessionLocal() as session:
-            user = await session.execute(select(User).where(User.id == callback.from_user.id))
+            user = await session.execute(select(User).where(User.id == user_id))
             user = user.scalar()
         await callback.answer(get_message(QUESTION_INTERNAL_ERROR, user=user, show_alert=True))
         return
-    user_id = callback.from_user.id
     allowed_values = set(ANSWER_VALUE_TO_EMOJI.keys())
     if value not in allowed_values:
         logging.error(f"[cb_answer_question] Invalid answer value: {value}")
         async with AsyncSessionLocal() as session:
-            user = await session.execute(select(User).where(User.id == callback.from_user.id))
+            user = await session.execute(select(User).where(User.id == user_id))
             user = user.scalar()
         await callback.answer(get_message(QUESTION_INTERNAL_ERROR, user=user, show_alert=True))
         return
@@ -127,15 +133,11 @@ async def cb_answer_question(callback: types.CallbackQuery, state: FSMContext):
         creator_user_id = group_obj.creator_user_id if group_obj else None
         ans = await session.execute(select(Answer).where(and_(Answer.question_id == qid, Answer.user_id == user.id)))
         ans = ans.scalar()
-        # --- Новый UX: двухшаговый переответ ---
         if ans and ans.status == 'answered' and ans.value == value:
-            # Первый клик по уже выбранному ответу — переводим в delivered, показываем все кнопки
-            ans.status = 'delivered'
-            await session.commit()
+            # Не меняем статус обратно на delivered, просто показываем сообщение
             await show_question_with_all_buttons(callback, question, user, creator_user_id)
             await callback.answer(get_message(QUESTION_CAN_CHANGE_ANSWER, user=user))
             return
-        # Любой другой клик (или delivered) — сохраняем ответ и скрываем остальные кнопки
         if not ans:
             ans = Answer(question_id=qid, user_id=user.id, status='answered', value=value)
             session.add(ans)
@@ -149,7 +151,6 @@ async def cb_answer_question(callback: types.CallbackQuery, state: FSMContext):
         await session.commit()
         await show_question_with_selected_button(callback, question, user, value, creator_user_id)
         await callback.answer(get_message(QUESTION_ANSWER_SAVED, user=user))
-        # --- Следующий вопрос из очереди ---
         next_q = await get_next_unanswered_question(session, question.group_id, user.id)
         if next_q:
             await send_question_to_user(bot, user, next_q, creator_user_id)
@@ -171,7 +172,10 @@ async def cb_answer_question(callback: types.CallbackQuery, state: FSMContext):
 @router.callback_query(F.data.startswith("delete_question_"))
 async def cb_delete_question(callback: types.CallbackQuery, state: FSMContext):
     qid = int(callback.data.split("_")[-1])
-    user_id = callback.from_user.id
+    user_id = await get_or_restore_internal_user_id(state, callback.from_user.id)
+    if not user_id:
+        await callback.answer(get_message("Please start the bot to use this feature.", user=callback.from_user), show_alert=True)
+        return
     async with AsyncSessionLocal() as session:
         user = await session.execute(select(User).where(User.id == user_id))
         user = user.scalar()
@@ -208,7 +212,10 @@ ANSWERED_PAGE_SIZE = 10
 
 @router.callback_query(F.data == "load_answered_questions")
 async def cb_load_answered_questions(callback: types.CallbackQuery, state: FSMContext):
-    user_id = callback.from_user.id
+    user_id = await get_or_restore_internal_user_id(state, callback.from_user.id)
+    if not user_id:
+        await callback.answer(get_message("Please start the bot to use this feature.", user=callback.from_user), show_alert=True)
+        return
     async with AsyncSessionLocal() as session:
         user = await session.execute(select(User).where(User.id == user_id))
         user = user.scalar()
@@ -257,7 +264,10 @@ async def cb_load_answered_questions(callback: types.CallbackQuery, state: FSMCo
 @router.callback_query(F.data.startswith("load_answered_questions_more_"))
 async def cb_load_answered_questions_more(callback: types.CallbackQuery, state: FSMContext):
     print(f"[DEBUG] cb_load_answered_questions_more: callback.data={callback.data}")
-    user_id = callback.from_user.id
+    user_id = await get_or_restore_internal_user_id(state, callback.from_user.id)
+    if not user_id:
+        await callback.answer(get_message("Please start the bot to use this feature.", user=callback.from_user), show_alert=True)
+        return
     try:
         page = int(callback.data.split("_")[-1])
     except Exception as e:
@@ -326,7 +336,10 @@ async def cb_load_answered_questions_more(callback: types.CallbackQuery, state: 
 
 @router.callback_query(F.data == "load_unanswered")
 async def cb_load_unanswered(callback: types.CallbackQuery, state: FSMContext):
-    user_id = callback.from_user.id
+    user_id = await get_or_restore_internal_user_id(state, callback.from_user.id)
+    if not user_id:
+        await callback.answer(get_message("Please start the bot to use this feature.", user=callback.from_user), show_alert=True)
+        return
     async with AsyncSessionLocal() as session:
         user = await session.execute(select(User).where(User.id == user_id))
         user = user.scalar()
@@ -407,6 +420,8 @@ async def show_question_with_all_buttons(callback, question, user, creator_user_
         logging.error(f"[show_question_with_all_buttons] Failed to edit reply markup: {e}")
 
 async def send_question_to_user(bot, user, question, creator_user_id=None, group_id=None, all_groups_count=None, group_name=None):
+    import logging
+    logging.warning(f"[send_question_to_user] user.id={user.id}, question.id={question.id}, user.current_group_id={getattr(user, 'current_group_id', None)}")
     if creator_user_id is None or group_id is None or group_name is None or all_groups_count is None:
         async with AsyncSessionLocal() as session:
             group_obj = await session.execute(select(Group).where(Group.id == question.group_id))
@@ -436,7 +451,13 @@ async def send_question_to_user(bot, user, question, creator_user_id=None, group
     if is_author or is_creator:
         keyboard.append([types.InlineKeyboardButton(text="Delete", callback_data=f"delete_question_{question.id}")])
     kb = types.InlineKeyboardMarkup(inline_keyboard=keyboard)
-    await bot.send_message(user.id, text, reply_markup=kb, parse_mode="HTML")
+    telegram_user_id = await get_telegram_user_id(user.id)
+    logging.warning(f"[send_question_to_user] telegram_user_id={telegram_user_id}")
+    if telegram_user_id:
+        await bot.send_message(telegram_user_id, text, reply_markup=kb, parse_mode="HTML")
+        logging.warning(f"[send_question_to_user] sent to {telegram_user_id}")
+    else:
+        logging.error(f"[send_question_to_user] telegram_user_id not found for user.id={user.id}")
 
 async def send_answered_question_to_user(bot, user, question, value, group_name=None, all_groups_count=None):
     if group_name is None or all_groups_count is None:
@@ -461,4 +482,6 @@ async def send_answered_question_to_user(bot, user, question, value, group_name=
     if is_author or is_creator:
         row.append(types.InlineKeyboardButton(text="Delete", callback_data=f"delete_question_{question.id}"))
     kb = types.InlineKeyboardMarkup(inline_keyboard=[row])
-    await bot.send_message(user.id, text, reply_markup=kb, parse_mode="HTML") 
+    telegram_user_id = await get_telegram_user_id(user.id)
+    if telegram_user_id:
+        await bot.send_message(telegram_user_id, text, reply_markup=kb, parse_mode="HTML") 

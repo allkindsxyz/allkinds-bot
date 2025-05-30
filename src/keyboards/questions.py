@@ -4,9 +4,9 @@ from src.texts.messages import QUESTION_DELETE, QUESTION_LOAD_MORE
 
 ANSWER_VALUES = [
     (-2, "😠"),
-    (-1, "🙁"),
+    (-1, "👎"),
     (0,  "🤔"),
-    (1,  "🙂"),
+    (1,  "👍"),
     (2,  "😍"),
 ]
 ANSWER_VALUE_TO_EMOJI = dict(ANSWER_VALUES)

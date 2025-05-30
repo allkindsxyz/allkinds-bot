@@ -405,6 +405,7 @@ async def test_instructions_command(monkeypatch):
             self.deleted.append(msg_id)
     message = DummyMessage()
     state = DummyState()
+    state_data["internal_user_id"] = 111
     # Первый вызов — инструкция появляется
     await instructions(message, state)
     assert len(message.sent) == 1
@@ -438,7 +439,7 @@ async def test_mygroups_command(monkeypatch):
         async def delete_message(self, chat_id, msg_id):
             self.deleted.append(msg_id)
     # Мокаем show_user_groups чтобы оно отправляло сообщение и сохраняло message_id
-    async def fake_show_user_groups(message, state, user):
+    async def fake_show_user_groups(message, state, is_admin=None):
         msg = await message.answer(f"Groups for {message.from_user.id}")
         data = await state.get_data()
         ids = data.get("my_groups_msg_ids", [])

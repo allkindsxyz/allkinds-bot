@@ -6,4 +6,5 @@ psycopg2-binary
 asyncpg
 pytest>=7.0.0
 pytest-asyncio>=0.20.0
-testcontainers[postgresql]>=3.7.0 
+testcontainers[postgresql]>=3.7.0
+redis[async] 

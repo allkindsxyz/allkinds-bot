@@ -27,9 +27,9 @@ async def onboarding_nickname(message: types.Message, state: FSMContext):
     nickname = message.text.strip()
     data = await state.get_data()
     group_id = data.get("group_id")
-    telegram_user_id = message.from_user.id
+    user_id = data.get("internal_user_id")
     async with AsyncSessionLocal() as session:
-        user = await session.execute(select(User).where(User.id == telegram_user_id))
+        user = await session.execute(select(User).where(User.id == user_id))
         user = user.scalar()
         if len(nickname) < 2:
             await message.answer(get_message("ONBOARDING_NICKNAME_TOO_SHORT", user or message.from_user))
@@ -38,7 +38,7 @@ async def onboarding_nickname(message: types.Message, state: FSMContext):
             await message.answer(get_message("ONBOARDING_INTERNAL_ERROR", user or message.from_user))
             await state.clear()
             return
-        await save_nickname_service(telegram_user_id, group_id, nickname)
+        await save_nickname_service(user_id, group_id, nickname)
         await state.set_state(Onboarding.photo)
         await message.answer(get_message("ONBOARDING_SEND_PHOTO", user or message.from_user), reply_markup=types.ReplyKeyboardRemove())
 
@@ -50,15 +50,15 @@ async def onboarding_photo(message: types.Message, state: FSMContext):
     file_id = message.photo[-1].file_id
     data = await state.get_data()
     group_id = data.get("group_id")
-    telegram_user_id = message.from_user.id
+    user_id = data.get("internal_user_id")
     async with AsyncSessionLocal() as session:
-        user = await session.execute(select(User).where(User.id == telegram_user_id))
+        user = await session.execute(select(User).where(User.id == user_id))
         user = user.scalar()
         if not group_id:
             await message.answer(get_message("ONBOARDING_INTERNAL_ERROR", user or message.from_user))
             await state.clear()
             return
-        await save_photo_service(telegram_user_id, group_id, file_id)
+        await save_photo_service(user_id, group_id, file_id)
         await state.set_state(Onboarding.location)
         await message.answer(get_message("ONBOARDING_SEND_LOCATION", user or message.from_user), reply_markup=types.ReplyKeyboardMarkup(
             keyboard=[[types.KeyboardButton(text=get_message("BTN_SEND_LOCATION", user or message.from_user), request_location=True)]],
@@ -70,9 +70,9 @@ async def onboarding_photo(message: types.Message, state: FSMContext):
 async def onboarding_location(message: types.Message, state: FSMContext):
     data = await state.get_data()
     group_id = data.get("group_id")
-    telegram_user_id = message.from_user.id
+    user_id = data.get("internal_user_id")
     async with AsyncSessionLocal() as session:
-        user = await session.execute(select(User).where(User.id == telegram_user_id))
+        user = await session.execute(select(User).where(User.id == user_id))
         user = user.scalar()
         if not group_id:
             await message.answer(get_message("ONBOARDING_INTERNAL_ERROR", user or message.from_user))
@@ -81,20 +81,20 @@ async def onboarding_location(message: types.Message, state: FSMContext):
         if message.location:
             lat = message.location.latitude
             lon = message.location.longitude
-            await save_location_service(telegram_user_id, group_id, lat, lon)
+            await save_location_service(user_id, group_id, lat, lon)
         elif message.text and len(message.text.strip()) > 2:
             city_raw = message.text.strip()
             city, country = await normalize_city_country(city_raw)
-            await save_location_service(telegram_user_id, group_id, None, None, city=city, country=country)
+            await save_location_service(user_id, group_id, None, None, city=city, country=country)
         else:
             await message.answer(get_message("ONBOARDING_LOCATION_REQUIRED", user or message.from_user))
             return
-        complete = await is_onboarding_complete_service(telegram_user_id, group_id)
+        complete = await is_onboarding_complete_service(user_id, group_id)
         if complete:
             await state.clear()
-            await message.answer(get_message("ONBOARDING_LOCATION_SAVED", user or message.from_user), reply_markup=types.ReplyKeyboardRemove())
+            await message.answer(get_message("ONBOARDING_LOCATION_SAVED", user or message.from_user))
             from src.handlers.groups import show_group_welcome_and_question
-            await show_group_welcome_and_question(message, telegram_user_id, group_id)
+            await show_group_welcome_and_question(message, user_id, group_id)
         else:
             await message.answer(get_message("ONBOARDING_SOMETHING_WRONG", user or message.from_user))
             await state.clear()

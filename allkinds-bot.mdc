@@ -1,8 +1,48 @@
 ---
-description:
-globs:
+description: 
+globs: 
 alwaysApply: false
 ---
 # Allkinds Bot
 
 **Attention: This product is not an MVP. It is a full-featured, production-ready product that must work reliably, be robust, and ready for real-world deployment. All features are implemented with production standards, UX, and scalability in mind.**
+
+---
+
+## Change History and Current State (May 2025)
+
+### Architecture & Privacy
+- `telegram_user_id` has been completely removed from the database and business logic. All user identification in the DB is via internal autoincrement `user.id` only.
+- Telegram user_id is used only for sending messages and for temporary mapping in Redis (`tg2int` and `int2tg`, TTL 30 days).
+- Recovery of `internal_user_id` from Redis is implemented in all critical handlers (message/callback_query). If the key is missing, the user is prompted to use /start.
+- All business operations (group creation/deletion/join/leave, matching, questions/answers) work only with `internal_user_id`.
+
+### Groups & Roles
+- Super-admin is defined via `ADMIN_USER_ID` in .env, but in the DB is a regular user with the right to create groups (`GroupCreator`).
+- Adding new `GroupCreator` is only possible via the /addadmin command (super-admin only).
+- All permission logic and button display (create group, admin actions) is based on `internal_user_id` and the `group_creators` table.
+
+### UX & State
+- After any `state.clear()`, `internal_user_id` is always restored in FSMContext.
+- All messages and buttons are correctly displayed for both admin and regular users, including deep link and onboarding scenarios.
+- All logic for question delivery, matching, history, and balance works only through internal ids and does not depend on Telegram user_id.
+
+### Matching & Chat
+- Matching works only if users have 3+ common answered questions.
+- All deep links and chat-bot transitions are formed using `telegram_user_id` obtained from Redis.
+- Both users receive match notifications if their `telegram_user_id` is present in Redis.
+
+### Tests & Infrastructure
+- All business tests pass (pytest, testcontainers, PostgreSQL).
+- Redis can be local or cloud (Railway), the `REDIS_URL` variable is set via .env.
+- All migrations and DB structure are kept up to date.
+
+### Key Bugfixes
+- Fixed desync between Telegram user_id and internal_user_id (especially after state reset and with deep links).
+- Fixed all places where group members could be duplicated or questions "disappeared" due to delivery errors.
+- All message delivery is wrapped in try/except, errors are logged, and transactions are not rolled back due to Telegram errors.
+- All matching and chat logic is now fully independent of having telegram_user_id in the DB.
+
+---
+
+**Context and history are preserved. All architectural decisions and bugfixes are documented to prevent repeated mistakes.**
