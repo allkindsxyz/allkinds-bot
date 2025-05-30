@@ -28,6 +28,7 @@ target_metadata = Base.metadata
 # ... etc.
 
 print("[ALEMBIC DEBUG] DATABASE_URL:", os.getenv("DATABASE_URL"))
+print("[ALEMBIC DEBUG] repr(DATABASE_URL):", repr(os.getenv("DATABASE_URL")))
 
 def run_migrations_offline() -> None:
     """Run migrations in 'offline' mode.
