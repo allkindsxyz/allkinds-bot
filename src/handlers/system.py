@@ -263,27 +263,36 @@ async def extend_token_callback(callback: types.CallbackQuery, state: FSMContext
     await callback.message.answer(get_message(TOKEN_EXTENDED, user or callback.from_user))
     await callback.answer()
 
+@router.message(Command("myid"))
+async def myid_command(message: types.Message, state: FSMContext):
+    data = await state.get_data()
+    user_id = data.get('internal_user_id')
+    if not user_id:
+        await message.answer("User not found. Please use /start first.")
+        return
+    await message.answer(f"Your user.id: {user_id}")
+
 @router.message(Command("addcreator"))
 async def add_creator_command(message: types.Message, state: FSMContext):
     args = message.text.strip().split()
     if len(args) != 2 or not args[1].isdigit():
-        await message.answer("Usage: /addcreator <telegram_id>")
+        await message.answer("Usage: /addcreator <user_id>")
         return
     admin_telegram_id = os.getenv("ADMIN_USER_ID")
     if not admin_telegram_id or str(message.from_user.id) != str(admin_telegram_id):
         await message.answer("You are not authorized to use this command.")
         return
-    target_telegram_id = int(args[1])
+    target_user_id = int(args[1])
     async with AsyncSessionLocal() as session:
-        user = await session.execute(select(User).where(User.telegram_user_id == target_telegram_id))
+        user = await session.execute(select(User).where(User.id == target_user_id))
         user = user.scalar()
         if not user:
-            await message.answer(f"User with telegram_id {target_telegram_id} does not exist.")
+            await message.answer(f"User with id {target_user_id} does not exist.")
             return
         exists = await session.execute(select(GroupCreator).where(GroupCreator.user_id == user.id))
         if exists.scalar():
-            await message.answer(f"User {target_telegram_id} is already a group creator.")
+            await message.answer(f"User {target_user_id} is already a group creator.")
             return
         session.add(GroupCreator(user_id=user.id))
         await session.commit()
-        await message.answer(f"User {target_telegram_id} added to group_creators.") 
+        await message.answer(f"User {target_user_id} added to group_creators.") 
