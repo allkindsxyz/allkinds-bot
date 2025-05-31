@@ -1,8 +1,19 @@
-from src.models import Question, Answer, GroupMember, Group
+from src.models import Question, Answer, GroupMember, Group, User
 from sqlalchemy import select, and_
 from src.db import AsyncSessionLocal
 
+async def ensure_user_exists(session, user_id):
+    user = await session.execute(select(User).where(User.id == user_id))
+    user = user.scalar()
+    if not user:
+        user = User()
+        user.id = user_id
+        session.add(user)
+        await session.flush()
+    return user
+
 async def get_next_unanswered_question(session, group_id, user_id):
+    await ensure_user_exists(session, user_id)
     q = await session.execute(
         select(Question).where(
             and_(Question.group_id == group_id, Question.is_deleted == 0)

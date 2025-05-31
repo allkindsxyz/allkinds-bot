@@ -10,6 +10,7 @@ from src.services.questions import (
     is_duplicate_question,
     moderate_question,
     get_group_members,
+    ensure_user_exists,
 )
 from src.constants import POINTS_FOR_NEW_QUESTION, POINTS_FOR_ANSWER
 from src.db import AsyncSessionLocal
@@ -40,6 +41,7 @@ async def handle_new_question(message: types.Message, state: FSMContext):
         await message.answer(get_message("Please start the bot to use this feature.", user=message.from_user))
         return
     async with AsyncSessionLocal() as session:
+        await ensure_user_exists(session, user_id)
         user = await session.execute(select(User).where(User.id == user_id))
         user = user.scalar()
     if len(text) < 5:
