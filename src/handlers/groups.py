@@ -566,25 +566,9 @@ async def cb_match_postpone(callback: types.CallbackQuery, state: FSMContext):
                 {"user_id": user.id, "group_id": group_id, "match_user_id": match_user_id}
             )
             await session.commit()
-            # Удаляем сообщения мэтча (фото/текст)
+            # Просто удаляем сообщение мэтча
             try:
                 await callback.message.delete()
-            except Exception:
-                pass
-            # Удаляем исходное сообщение с кнопкой мэтча, если оно есть
-            data = await state.get_data()
-            vibing_msg_id = data.get("vibing_msg_id")
-            if vibing_msg_id:
-                try:
-                    await callback.message.bot.delete_message(callback.message.chat.id, vibing_msg_id)
-                except Exception:
-                    pass
-                await state.update_data(vibing_msg_id=None)
-            # Отправляем уведомление и удаляем его через 5 секунд
-            notif = await callback.message.answer(get_message("This match will be shown to you again.", user=callback.from_user))
-            await asyncio.sleep(5)
-            try:
-                await notif.delete()
             except Exception:
                 pass
     await callback.answer()
