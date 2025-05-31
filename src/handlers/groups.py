@@ -566,11 +566,12 @@ async def cb_match_postpone(callback: types.CallbackQuery, state: FSMContext):
                 {"user_id": user.id, "group_id": group_id, "match_user_id": match_user_id}
             )
             await session.commit()
-            # Просто удаляем сообщение мэтча
-            try:
-                await callback.message.delete()
-            except Exception:
-                pass
+    # Удаляем три последних сообщения (мэтч, Show again, Don't show)
+    for offset in range(0, 3):
+        try:
+            await callback.bot.delete_message(callback.message.chat.id, callback.message.message_id - offset)
+        except Exception:
+            pass
     await callback.answer()
 
 @router.message(F.text.func(lambda t: t and ("vibing" in t.lower() or "совпадает" in t.lower())))
