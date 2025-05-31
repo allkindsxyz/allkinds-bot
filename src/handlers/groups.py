@@ -612,7 +612,7 @@ async def cb_match_chat(callback: types.CallbackQuery, state: FSMContext):
         await callback.answer()
         return
     match_user_id = int(callback.data.split("_")[-1])
-    from src.models import MatchStatus
+    from src.models import MatchStatus, GroupMember
     async with AsyncSessionLocal() as session:
         user = await session.execute(select(User).where(User.id == internal_user_id))
         user = user.scalar()
@@ -623,14 +623,10 @@ async def cb_match_chat(callback: types.CallbackQuery, state: FSMContext):
             return
         member = await session.execute(select(GroupMember).where(GroupMember.user_id == user.id, GroupMember.group_id == group_id))
         member = member.scalar()
-        print(f"[DEBUG] cb_match_chat: user_id={internal_user_id}, match_user_id={match_user_id}, group_id={group_id}")
         match_user = await session.execute(select(User).where(User.id == match_user_id))
         match_user = match_user.scalar()
-        print(f"[DEBUG] cb_match_chat: match_user={match_user}")
-        if not match_user:
-            await callback.message.answer(get_message("Match user not found.", user=user))
-            await callback.answer()
-            return
+        match_member = await session.execute(select(GroupMember).where(GroupMember.user_id == match_user_id, GroupMember.group_id == group_id))
+        match_member = match_member.scalar()
         # --- Получаем telegram_user_id через Redis ---
         initiator_telegram_user_id = await get_telegram_user_id(user.id)
         match_telegram_user_id = await get_telegram_user_id(match_user.id)
