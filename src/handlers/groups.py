@@ -566,8 +566,8 @@ async def cb_match_postpone(callback: types.CallbackQuery, state: FSMContext):
                 {"user_id": user.id, "group_id": group_id, "match_user_id": match_user_id}
             )
             await session.commit()
-    # Удаляем три последних сообщения (мэтч, Show again, Don't show)
-    for offset in range(0, 3):
+    # Удаляем только два последних сообщения (мэтч и кнопка)
+    for offset in range(0, 2):
         try:
             await callback.bot.delete_message(callback.message.chat.id, callback.message.message_id - offset)
         except Exception:
