@@ -4,7 +4,7 @@ import logging
 import asyncio
 from aiohttp import web
 from aiogram.webhook.aiohttp_server import SimpleRequestHandler, setup_application
-from src.loader import bot, dp
+from src.loader import bot, dp, set_bot_version
 from src.routers import all_routers
 from src.services.groups import ensure_admin_in_db
 from aiogram import types
@@ -47,6 +47,7 @@ def create_app():
 
 async def main():
     logging.basicConfig(level=logging.INFO)
+    await set_bot_version()
     await ensure_admin_in_db()
     
     # Регистрация команд бота

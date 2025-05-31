@@ -2,7 +2,7 @@ from aiogram import types, F, Router
 from aiogram.filters import CommandStart, Command
 from aiogram.fsm.context import FSMContext
 from src.texts.messages import INSTRUCTIONS_TEXT, GROUPS_WELCOME_ADMIN, GROUPS_WELCOME, GROUPS_PROFILE_SETUP, GROUPS_FIND_MATCH, GROUPS_SELECT, get_message, TOKEN_EXTEND, TOKEN_EXTENDED, BTN_SWITCH_TO, BTN_CREATE_GROUP
-from src.loader import bot, dp
+from src.loader import bot, dp, redis, VERSION
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeyboardRemove
 from src.services.questions import get_next_unanswered_question
 from src.handlers.questions import send_question_to_user
@@ -12,7 +12,7 @@ from src.db import AsyncSessionLocal
 from sqlalchemy import select
 from src.models import User, GroupMember, GroupCreator
 from src.keyboards.groups import get_user_keyboard, get_admin_keyboard, get_group_reply_keyboard
-from src.utils.redis import get_internal_user_id, set_telegram_mapping, update_ttl, redis
+from src.utils.redis import get_internal_user_id, set_telegram_mapping, update_ttl
 import os
 
 router = Router()
@@ -50,6 +50,15 @@ async def instructions(message: types.Message, state: FSMContext):
             user = user.scalar()
         msg = await message.answer(get_message(INSTRUCTIONS_TEXT, user or message.from_user), parse_mode="HTML")
         await state.update_data(instructions_msg_id=msg.message_id)
+        # --- Проверка версии ---
+        user_data = await state.get_data()
+        user_version = user_data.get('bot_version')
+        current_version = await redis.get('bot_version')
+        if user_version and current_version and user_version != current_version:
+            await message.answer("Вышла новая версия бота. Пожалуйста, нажмите /start для обновления.")
+            await state.clear()
+            await state.update_data(bot_version=current_version)
+            return
     except Exception as e:
         logging.exception(f"Ошибка в хендлере /instructions: {e}")
 
@@ -101,6 +110,17 @@ async def start(message: types.Message, state: FSMContext):
                 internal_user_id = user.id
                 await set_telegram_mapping(telegram_user_id, internal_user_id)
         await state.update_data(internal_user_id=internal_user_id)
+        # --- Проверка версии ---
+        user_data = await state.get_data()
+        user_version = user_data.get('bot_version')
+        current_version = await redis.get('bot_version')
+        if user_version and current_version and user_version != current_version:
+            await message.answer("Вышла новая версия бота. Пожалуйста, нажмите /start для обновления.")
+            await state.clear()
+            await state.update_data(bot_version=current_version)
+            return
+        # После успешного старта обновляем версию в state
+        await state.update_data(bot_version=current_version)
         # --- Исправленный парсинг аргумента диплинка ---
         args = None
         if message.text:
