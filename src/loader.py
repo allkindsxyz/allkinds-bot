@@ -24,6 +24,6 @@ redis = aioredis.from_url(REDIS_URL, decode_responses=True)
 async def set_bot_version():
     if VERSION:
         await redis.set('bot_version', VERSION)
-
+ 
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher() 

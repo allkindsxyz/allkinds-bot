@@ -25,12 +25,14 @@ MESSAGES = {
         "GROUPS_NO_NEW_QUESTIONS": "🤷‍♂️ No new questions yet. Want to ask one?",
         "GROUPS_PROFILE_SETUP": "🔧 Time to personalise—enter your nickname:",
         "GROUPS_REVIEW_ANSWERED": "🔍 Here are your answered questions:",
-        "GROUPS_FIND_MATCH": "👋 Welcome back to {group_name}! Your balance: {balance}💎",
+        "GROUPS_FIND_MATCH": "👋 Welcome back to <b>{group_name}</b>!\nYour balance: {balance}💎",
         "GROUPS_SELECT": "👉 Which group do you want to switch to?",
         "GROUPS_WELCOME_ADMIN": "👋 Hey admin! Ready to manage your crew?",
         "GROUPS_WELCOME": "👋 Welcome to Allkinds! Enter a code to join.",
         "GROUPS_SWITCH_TO": "🔄 Switch to {group_name} now.",
         "GROUPS_INVITE_LINK": "🎉 <b>{group_name}</b>\n{group_desc}\nInvite: {deeplink}\nCode: {invite_code}",
+        "NEW_QUESTION_NOTIFICATION": "📩 New question in queue: {question_text}...",
+        "QUEUE_LOAD_UNANSWERED": "📋 Ready to answer questions from the queue?",
         # --- Questions ---
         "QUESTION_TOO_SHORT": "😅 Question's short—add some detail!",
         "QUESTION_MUST_JOIN_GROUP": "🔒 Join a group first to ask questions.",
@@ -51,10 +53,17 @@ MESSAGES = {
         "QUESTION_DELETE": "🗑 Delete",
         # --- Match ---
         "MATCH_NO_VALID": "🤔 No matches yet. Answer a few more to find them!",
-        "MATCH_FOUND": "🎉 <b>{nickname}</b>\nMatch: <b>{similarity}%</b> ({common_questions} questions, from {valid_users_count}) people",
+        "MATCH_FOUND": "🎉 <b>{nickname}</b>\nMatch: <b>{similarity}%</b> ({common_questions} questions, from {valid_users_count} people)",
         "MATCH_AI_CHEMISTRY": "🧬 Discover & Connect with AI",
         "MATCH_SHOW_AGAIN": "🔁 Show again",
         "MATCH_DONT_SHOW": "🚫 Don't show again",
+        "MATCH_NO_OTHERS": "There are no other participants in the group for matching yet.",
+        # --- Match Connection Messages ---
+        "MATCH_REQUEST_SENT": "🔔 We've notified {nickname} about your interest. We'll let you know when they make a decision!",
+        "MATCH_INCOMING_REQUEST": "💌 {nickname} wants to connect with you",
+        "MATCH_REQUEST_ACCEPTED": "✅ {nickname} accepted your match request!",
+        "MATCH_REQUEST_REJECTED": "😔 {nickname} declined your match request.",
+        "MATCH_REQUEST_BLOCKED": "🚫 {nickname} decided not to communicate with you 😞",
         # --- System/General ---
         "INSTRUCTIONS_TEXT": (
             "1️⃣ Join a group  "
@@ -73,12 +82,17 @@ MESSAGES = {
         "BTN_CANCEL": "❌ Cancel",
         "BTN_SEND_LOCATION": "📍 Share your location",
         "BTN_WHO_IS_VIBING": "✨ Who's vibing highest right now",
+        "BTN_ACCEPT_MATCH": "✅ Accept",
+        "BTN_REJECT_MATCH": "❌ Decline",
+        "BTN_BLOCK_MATCH": "🚫 Block",
+        "BTN_GO_TO_CHAT": "💬 Go to Chat",
         "NO_AVAILABLE_ANSWERED_QUESTIONS": "🫥 You answered some Qs, but they were deleted—nothing to review.",
         "UNANSWERED_QUESTIONS_MSG": "🕑 You have <b>{count}</b> unanswered question(s) left.",
         "BTN_LOAD_UNANSWERED": "🔄 Load unanswered questions",
         "TOKEN_EXPIRE_REMINDER": "⏳ Your token is about to expire. Click the button to extend your account.",
         "TOKEN_EXTEND": "🔄 Extend",
         "TOKEN_EXTENDED": "✅ Your token has been extended.",
+        "QUESTIONS_ALL_ANSWERED": "🎉 You have answered all questions!",
     },
     "ru": {
         # --- Onboarding ---
@@ -104,12 +118,14 @@ MESSAGES = {
         "GROUPS_NO_NEW_QUESTIONS": "🤷‍♂️ Новых вопросов пока нет. Хочешь задать свой?",
         "GROUPS_PROFILE_SETUP": "🔧 Давай настроим профиль — введи свой ник:",
         "GROUPS_REVIEW_ANSWERED": "🔍 Вот твои ответы на вопросы:",
-        "GROUPS_FIND_MATCH": "👋 С возвращением в «{group_name}»! Ваш баланс: {balance}💎",
+        "GROUPS_FIND_MATCH": "👋 Добро пожаловать обратно в <b>{group_name}</b>!\nВаш баланс: {balance}💎",
         "GROUPS_SELECT": "👉 На какую группу хочешь переключиться?",
         "GROUPS_WELCOME_ADMIN": "👋 Привет, админ! Готов управлять своей командой?",
         "GROUPS_WELCOME": "👋 Добро пожаловать в Allkinds! Введи код, чтобы присоединиться.",
         "GROUPS_SWITCH_TO": "🔄 Сразу переключимся на «{group_name}».",
         "GROUPS_INVITE_LINK": "🎉 <b>{group_name}</b>\n{group_desc}\nПриглашение: {deeplink}\nКод: {invite_code}",
+        "NEW_QUESTION_NOTIFICATION": "📩 Новый вопрос в очереди: {question_text}...",
+        "QUEUE_LOAD_UNANSWERED": "📋 Готов ответить на вопросы из очереди?",
         # --- Questions ---
         "QUESTION_TOO_SHORT": "😅 Вопрос слишком короткий — добавь деталей!",
         "QUESTION_MUST_JOIN_GROUP": "🔒 Сначала присоединитесь к группе, чтобы задавать вопросы.",
@@ -134,6 +150,13 @@ MESSAGES = {
         "MATCH_AI_CHEMISTRY": "🧬 Исследуй AI-химию и общайся",
         "MATCH_SHOW_AGAIN": "🔁 Показать снова",
         "MATCH_DONT_SHOW": "🚫 Больше не показывать",
+        "MATCH_NO_OTHERS": "В группе пока нет других участников для мэтча.",
+        # --- Match Connection Messages ---
+        "MATCH_REQUEST_SENT": "🔔 Мы уведомили {nickname} о вашем интересе. Мы сообщим вам, когда они примут решение!",
+        "MATCH_INCOMING_REQUEST": "💌 {nickname} хочет подключиться к вам",
+        "MATCH_REQUEST_ACCEPTED": "✅ {nickname} принял ваш запрос на подключение!",
+        "MATCH_REQUEST_REJECTED": "😔 {nickname} отклонил ваш запрос на подключение.",
+        "MATCH_REQUEST_BLOCKED": "🚫 {nickname} решил не общаться с вами 😞",
         # --- System/General ---
         "INSTRUCTIONS_TEXT": (
             "1️⃣ Присоединияйся к группе  "
@@ -152,12 +175,17 @@ MESSAGES = {
         "BTN_CANCEL": "❌ Отмена",
         "BTN_SEND_LOCATION": "📍 Поделиться своей локацией",
         "BTN_WHO_IS_VIBING": "✨ Кто сейчас на волне сильнее всех",
+        "BTN_ACCEPT_MATCH": "✅ Принять",
+        "BTN_REJECT_MATCH": "❌ Отклонить",
+        "BTN_BLOCK_MATCH": "🚫 Заблокировать",
+        "BTN_GO_TO_CHAT": "💬 Перейти в чат",
         "NO_AVAILABLE_ANSWERED_QUESTIONS": "🫥 Ты отвечал на вопросы, но их удалили — нечего просматривать.",
         "UNANSWERED_QUESTIONS_MSG": "🕑 У вас осталось <b>{count}</b> неотвеченных вопрос(а/ов).",
         "BTN_LOAD_UNANSWERED": "🔄 Показать неотвеченные",
         "TOKEN_EXPIRE_REMINDER": "⏳ Твой токен вот-вот истечет. Нажми на кнопку, чтобы продлить свой эккаунт.",
         "TOKEN_EXTEND": "🔄 Продлить",
         "TOKEN_EXTENDED": "✅ Ваш токен обновлен.",
+        "QUESTIONS_ALL_ANSWERED": "🎉 Ты ответил(а) на все вопросы!",
     },
 }
 
@@ -227,6 +255,14 @@ MATCH_FOUND = "MATCH_FOUND"
 MATCH_AI_CHEMISTRY = "MATCH_AI_CHEMISTRY"
 MATCH_SHOW_AGAIN = "MATCH_SHOW_AGAIN"
 MATCH_DONT_SHOW = "MATCH_DONT_SHOW"
+MATCH_NO_OTHERS = "MATCH_NO_OTHERS"
+
+# --- Match Connection Messages ---
+MATCH_REQUEST_SENT = "MATCH_REQUEST_SENT"
+MATCH_INCOMING_REQUEST = "MATCH_INCOMING_REQUEST"
+MATCH_REQUEST_ACCEPTED = "MATCH_REQUEST_ACCEPTED"
+MATCH_REQUEST_REJECTED = "MATCH_REQUEST_REJECTED"
+MATCH_REQUEST_BLOCKED = "MATCH_REQUEST_BLOCKED"
 
 # --- System/General ---
 INSTRUCTIONS_TEXT = "INSTRUCTIONS_TEXT"
@@ -241,6 +277,10 @@ BTN_DELETE = "BTN_DELETE"
 BTN_CANCEL = "BTN_CANCEL"
 BTN_SEND_LOCATION = "BTN_SEND_LOCATION"
 BTN_WHO_IS_VIBING = "BTN_WHO_IS_VIBING"
+BTN_ACCEPT_MATCH = "BTN_ACCEPT_MATCH"
+BTN_REJECT_MATCH = "BTN_REJECT_MATCH"
+BTN_BLOCK_MATCH = "BTN_BLOCK_MATCH"
+BTN_GO_TO_CHAT = "BTN_GO_TO_CHAT"
 
 NO_AVAILABLE_ANSWERED_QUESTIONS = "NO_AVAILABLE_ANSWERED_QUESTIONS"
 
@@ -249,4 +289,9 @@ BTN_LOAD_UNANSWERED = "BTN_LOAD_UNANSWERED"
 
 TOKEN_EXPIRE_REMINDER = "TOKEN_EXPIRE_REMINDER"
 TOKEN_EXTEND = "TOKEN_EXTEND"
-TOKEN_EXTENDED = "TOKEN_EXTENDED" 
+TOKEN_EXTENDED = "TOKEN_EXTENDED"
+
+QUESTIONS_ALL_ANSWERED = "QUESTIONS_ALL_ANSWERED"
+
+NEW_QUESTION_NOTIFICATION = "NEW_QUESTION_NOTIFICATION"
+QUEUE_LOAD_UNANSWERED = "QUEUE_LOAD_UNANSWERED" 

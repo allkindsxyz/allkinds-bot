@@ -27,7 +27,10 @@ from src.texts.messages import (
     GROUPS_SWITCH_TO, GROUPS_INVITE_LINK, BTN_CREATE_GROUP, BTN_JOIN_GROUP, BTN_SWITCH_TO, BTN_DELETE_GROUP, BTN_LEAVE_GROUP,
     BTN_DELETE, BTN_CANCEL, BTN_WHO_IS_VIBING,
     MATCH_FOUND, MATCH_NO_VALID, MATCH_AI_CHEMISTRY, MATCH_SHOW_AGAIN, MATCH_DONT_SHOW,
-    QUESTION_LOAD_ANSWERED, NO_AVAILABLE_ANSWERED_QUESTIONS
+    MATCH_REQUEST_SENT, MATCH_INCOMING_REQUEST, MATCH_REQUEST_ACCEPTED, MATCH_REQUEST_REJECTED, MATCH_REQUEST_BLOCKED,
+    BTN_ACCEPT_MATCH, BTN_REJECT_MATCH, BTN_BLOCK_MATCH, BTN_GO_TO_CHAT,
+    QUESTION_LOAD_ANSWERED, NO_AVAILABLE_ANSWERED_QUESTIONS, BTN_LOAD_UNANSWERED, UNANSWERED_QUESTIONS_MSG,
+    MATCH_NO_OTHERS, QUEUE_LOAD_UNANSWERED
 )
 from src.utils.redis import get_or_restore_internal_user_id, get_telegram_user_id
 
@@ -40,9 +43,7 @@ async def ensure_admin_in_db():
         user = await session.execute(select(User).where(User.id == ADMIN_USER_ID))
         user = user.scalar()
         if not user:
-            user = User()
-            session.add(user)
-            await session.flush()
+            raise Exception(f"Admin user with id {ADMIN_USER_ID} not found. Use get_or_restore_internal_user_id before calling ensure_admin_in_db.")
         creator = await session.execute(select(GroupCreator).where(GroupCreator.user_id == user.id))
         creator = creator.scalar()
         if not creator:
@@ -68,6 +69,8 @@ async def create_group(user_id: int, name: str, description: str):
             user = User()
             session.add(user)
             await session.flush()
+            await session.commit()
+            print(f"[DEBUG] User created and committed (create_group): id={user.id}")
         group = Group(name=name, description=description, invite_code=invite_code, creator_user_id=user.id)
         session.add(group)
         await session.flush()
@@ -88,9 +91,7 @@ async def join_group_by_code(user_id: int, code: str):
         user = await session.execute(select(User).where(User.id == user_id))
         user = user.scalar()
         if not user:
-            user = User()
-            session.add(user)
-            await session.flush()
+            raise Exception(f"User with id {user_id} not found in join_group_by_code. Use get_or_restore_internal_user_id before calling this function.")
         member = await session.execute(select(GroupMember).where(GroupMember.user_id == user.id, GroupMember.group_id == group.id))
         member = member.scalar()
         if not member:
@@ -101,7 +102,7 @@ async def join_group_by_code(user_id: int, code: str):
 
 async def show_group_main_flow(message, user_id, group_id):
     """
-    После welcome: показывает первый неотвеченный вопрос (или сообщение), а также кнопку Load answered questions, если есть ответы.
+    После welcome: показывает кнопку истории, счётчик неотвеченных и первый неотвеченный вопрос.
     """
     from src.services.questions import get_next_unanswered_question
     from src.handlers.questions import send_question_to_user
@@ -112,7 +113,17 @@ async def show_group_main_flow(message, user_id, group_id):
     async with AsyncSessionLocal() as session:
         user = await session.execute(select(User).where(User.id == user_id))
         user = user.scalar()
-        # Считаем количество ответов
+        # --- ДОБАВЛЕНО: создаём delivered-Answer для всех новых вопросов ---
+        questions = await session.execute(select(Question).where(Question.group_id == group_id, Question.is_deleted == 0))
+        questions = questions.scalars().all()
+        for question in questions:
+            ans = await session.execute(select(Answer).where(and_(Answer.question_id == question.id, Answer.user_id == user.id)))
+            ans = ans.scalar()
+            if not ans:
+                session.add(Answer(question_id=question.id, user_id=user.id, status='delivered'))
+        await session.commit()
+        
+        # Считаем количество ответов для кнопки истории
         answers_count = await session.execute(
             select(Answer).where(
                 Answer.user_id == user.id,
@@ -121,16 +132,37 @@ async def show_group_main_flow(message, user_id, group_id):
             )
         )
         answers_count = len(answers_count.scalars().all())
-        # Ищем первый неотвеченный вопрос
-        next_q = await get_next_unanswered_question(session, group_id, user.id)
-        if next_q:
-            await send_question_to_user(message.bot, user, next_q)
-        else:
-            await message.answer(get_message("GROUPS_NO_NEW_QUESTIONS", user=user))
-        # Кнопка Load answered questions — только если есть хотя бы один ответ
+        
+        # Получаем все неотвеченные вопросы
+        unanswered = await session.execute(
+            select(Answer, Question).join(Question, Answer.question_id == Question.id)
+            .where(
+                Answer.user_id == user.id,
+                Answer.status == 'delivered',
+                Answer.value.is_(None),
+                Question.group_id == group_id,
+                Question.is_deleted == 0
+            )
+            .order_by(Question.created_at)
+        )
+        unanswered = unanswered.all()
+        
+        # 2. Кнопка загрузки отвеченных вопросов (если есть что загружать)
         if answers_count > 0:
             kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text=get_message(QUESTION_LOAD_ANSWERED, user=user), callback_data="load_answered_questions")]])
             await message.answer(get_message(GROUPS_REVIEW_ANSWERED, user=user), reply_markup=kb)
+        
+        # 3. Счётчик неотвеченных вопросов с правильным форматированием
+        if unanswered:
+            count = len(unanswered)
+            await message.answer(get_message("UNANSWERED_QUESTIONS_MSG", user=user, count=count), parse_mode="HTML")
+            
+            # 4. Первый неотвеченный вопрос показывается сразу
+            ans, question = unanswered[0]
+            if ans.status == 'delivered' and ans.value is None:
+                await send_question_to_user(message.bot, user, question)
+        else:
+            await message.answer(get_message("GROUPS_NO_NEW_QUESTIONS", user=user))
 
 async def show_group_welcome_and_question(message, user_id, group_id):
     """
@@ -157,7 +189,8 @@ async def show_group_welcome_and_question(message, user_id, group_id):
     )
     await message.answer(
         get_message(GROUPS_FIND_MATCH, user=user, group_name=group_name, balance=balance),
-        reply_markup=match_kb
+        reply_markup=match_kb,
+        parse_mode="HTML"
     )
     await show_group_main_flow(message, user_id, group_id)
 
@@ -504,7 +537,7 @@ async def cb_find_match(callback: types.CallbackQuery, state: FSMContext):
             await callback.answer(get_message(MATCH_NO_VALID, user=callback.from_user, show_alert=True))
             return
         if not match or not match.get('user_id'):
-            await callback.message.answer(get_message("В группе пока нет других участников для мэтча.", user=user))
+            await callback.message.answer(get_message(MATCH_NO_OTHERS, user=user))
             await callback.answer(get_message(MATCH_NO_VALID, user=callback.from_user, show_alert=True))
             return
         # Списываем баллы
@@ -525,7 +558,13 @@ async def cb_find_match(callback: types.CallbackQuery, state: FSMContext):
 
 @router.callback_query(F.data.startswith("match_hide_"))
 async def cb_match_hide(callback: types.CallbackQuery, state: FSMContext):
-    user_id = callback.from_user.id
+    from src.utils.redis import get_or_restore_internal_user_id
+    user_id = await get_or_restore_internal_user_id(state, callback.from_user.id)
+    if not user_id or user_id > 2_147_483_647:
+        import logging
+        logging.error(f"[cb_match_hide] Invalid user_id: {user_id}")
+        await callback.answer("Internal error: invalid user id.", show_alert=True)
+        return
     data = callback.data.split("_")
     match_user_id = int(data[-1])
     # Получаем group_id из текущей группы пользователя
@@ -551,7 +590,13 @@ async def cb_match_hide(callback: types.CallbackQuery, state: FSMContext):
 
 @router.callback_query(F.data.startswith("match_postpone_"))
 async def cb_match_postpone(callback: types.CallbackQuery, state: FSMContext):
-    user_id = callback.from_user.id
+    from src.utils.redis import get_or_restore_internal_user_id
+    user_id = await get_or_restore_internal_user_id(state, callback.from_user.id)
+    if not user_id or user_id > 2_147_483_647:
+        import logging
+        logging.error(f"[cb_match_postpone] Invalid user_id: {user_id}")
+        await callback.answer("Internal error: invalid user id.", show_alert=True)
+        return
     data = callback.data.split("_")
     match_user_id = int(data[-1])
     # Получаем group_id из текущей группы пользователя
@@ -606,6 +651,7 @@ async def handle_vibing_button(message: types.Message, state: FSMContext):
 
 @router.callback_query(F.data.startswith("match_chat_"))
 async def cb_match_chat(callback: types.CallbackQuery, state: FSMContext):
+    """Инициировать запрос на подключение к матчу (новая двухэтапная логика)"""
     internal_user_id = await get_or_restore_internal_user_id(state, callback.from_user.id)
     if not internal_user_id:
         await callback.message.answer(get_message("Please start the bot to use this feature.", user=callback.from_user))
@@ -627,52 +673,30 @@ async def cb_match_chat(callback: types.CallbackQuery, state: FSMContext):
         match_user = match_user.scalar()
         match_member = await session.execute(select(GroupMember).where(GroupMember.user_id == match_user_id, GroupMember.group_id == group_id))
         match_member = match_member.scalar()
-        # --- Получаем telegram_user_id через Redis ---
-        initiator_telegram_user_id = await get_telegram_user_id(user.id)
-        match_telegram_user_id = await get_telegram_user_id(match_user.id)
-        if not initiator_telegram_user_id or not match_telegram_user_id:
-            await callback.message.answer(get_message("Ошибка: не удалось получить Telegram ID для чата.", user=user))
-            await callback.answer()
-            return
-        obj1 = await session.execute(select(MatchStatus).where(
+        
+        # Проверяем, есть ли уже запрос
+        existing_request = await session.execute(select(MatchStatus).where(
             MatchStatus.user_id == user.id,
             MatchStatus.group_id == group_id,
             MatchStatus.match_user_id == match_user.id
         ))
-        obj1 = obj1.scalar()
-        if not obj1:
-            obj1 = MatchStatus(user_id=user.id, group_id=group_id, match_user_id=match_user.id, status="matched")
-            session.add(obj1)
+        existing_request = existing_request.scalar()
+        
+        # Создаем статус "ожидание подтверждения" для инициатора
+        if existing_request:
+            existing_request.status = "pending_approval"
         else:
-            obj1.status = "matched"
-        obj2 = await session.execute(select(MatchStatus).where(
-            MatchStatus.user_id == match_user.id,
-            MatchStatus.group_id == group_id,
-            MatchStatus.match_user_id == user.id
-        ))
-        obj2 = obj2.scalar()
-        if not obj2:
-            obj2 = MatchStatus(user_id=match_user.id, group_id=group_id, match_user_id=user.id, status="matched")
-            session.add(obj2)
-        else:
-            obj2.status = "matched"
-        user1_id = min(user.id, match_user.id)
-        user2_id = max(user.id, match_user.id)
-        match_obj = await session.execute(select(Match).where(
-            Match.user1_id == user1_id,
-            Match.user2_id == user2_id,
-            Match.group_id == group_id
-        ))
-        match_obj = match_obj.scalar()
-        if not match_obj:
-            from datetime import datetime, UTC
-            match_obj = Match(user1_id=user1_id, user2_id=user2_id, group_id=group_id, created_at=datetime.now(UTC), status="active")
-            session.add(match_obj)
+            new_request = MatchStatus(user_id=user.id, group_id=group_id, match_user_id=match_user.id, status="pending_approval")
+            session.add(new_request)
         await session.commit()
+    
+    # Удаляем карточку матча
     try:
         await callback.message.delete()
     except Exception:
         pass
+    
+    # Удаляем сообщение "vibing"
     data = await state.get_data()
     vibing_msg_id = data.get("vibing_msg_id")
     if vibing_msg_id:
@@ -681,38 +705,336 @@ async def cb_match_chat(callback: types.CallbackQuery, state: FSMContext):
         except Exception:
             pass
         await state.update_data(vibing_msg_id=None)
-    # Формируем диплинк с telegram_user_id обоих пользователей
-    param = quote(f"match_{initiator_telegram_user_id}_{match_telegram_user_id}")
-    link = f"https://t.me/{ALLKINDS_CHAT_BOT_USERNAME}?start={param}"
-    kb = types.InlineKeyboardMarkup(inline_keyboard=[
-        [types.InlineKeyboardButton(text=get_message("Go to Allkinds Chat Bot", user=user), url=link)]
-    ])
-    notif = await callback.message.answer(get_message("Click the button below to start your private chat:", user=user), reply_markup=kb)
-    async with AsyncSessionLocal() as session:
-        match_user = await session.execute(select(User).where(User.id == match_user_id))
-        match_user = match_user.scalar()
-        if match_user:
-            # Для второго пользователя также используем telegram_user_id через Redis
-            match_telegram_user_id2 = await get_telegram_user_id(match_user.id)
-            if match_telegram_user_id2:
-                param2 = quote(f"match_{match_telegram_user_id}_{initiator_telegram_user_id}")
-                link2 = f"https://t.me/{ALLKINDS_CHAT_BOT_USERNAME}?start={param2}"
-                kb2 = types.InlineKeyboardMarkup(inline_keyboard=[
-                    [types.InlineKeyboardButton(text=get_message("Go to Allkinds Chat Bot", user=match_user), url=link2)]
-                ])
-                try:
-                    await callback.bot.send_message(match_telegram_user_id2, get_message("You have a new match! Click below to start your private chat:", user=match_user), reply_markup=kb2)
-                except Exception as e:
-                    import logging
-                    logging.error(f"[cb_match_chat] Failed to send match notification to user_id={match_user.id}: {e}")
+    
+    # Уведомляем инициатора о том, что запрос отправлен
+    notif = await callback.message.answer(
+        get_message(MATCH_REQUEST_SENT, user=user, nickname=match_member.nickname if match_member else "Unknown")
+    )
+    
+    # Отправляем уведомление второму пользователю
+    match_telegram_user_id = await get_telegram_user_id(match_user.id)
+    if match_telegram_user_id:
+        # Получаем данные для отображения матча
+        reverse_match = await find_best_match(match_user_id, group_id, exclude_user_ids=[])
+        if reverse_match and reverse_match.get('user_id') == user.id:
+            similarity = reverse_match['similarity']
+            common_questions = reverse_match['common_questions']
+            valid_users_count = reverse_match['valid_users_count']
+        else:
+            # Если не удалось получить обратный мэтч, используем базовые данные
+            similarity = 85  # fallback
+            common_questions = 3  # fallback
+            valid_users_count = 2  # fallback
+        
+        # Сначала сообщение о запросе на подключение
+        request_text = get_message(MATCH_INCOMING_REQUEST, user=match_user, nickname=member.nickname if member else "Unknown")
+        
+        # Затем карточка матча
+        match_text = get_message(MATCH_FOUND, user=match_user, nickname=member.nickname if member else "Unknown", 
+                               similarity=similarity, common_questions=common_questions, valid_users_count=valid_users_count)
+        
+        # Кнопки для принятия/отклонения/блокировки
+        kb = types.InlineKeyboardMarkup(inline_keyboard=[
+            [
+                types.InlineKeyboardButton(text=get_message(BTN_ACCEPT_MATCH, user=match_user), 
+                                         callback_data=f"accept_match_{user.id}"),
+                types.InlineKeyboardButton(text=get_message(BTN_REJECT_MATCH, user=match_user), 
+                                         callback_data=f"reject_match_{user.id}")
+            ],
+            [
+                types.InlineKeyboardButton(text=get_message(BTN_BLOCK_MATCH, user=match_user), 
+                                         callback_data=f"block_match_{user.id}")
+            ]
+        ])
+        
+        try:
+            # Отправляем сообщение о запросе
+            await callback.bot.send_message(match_telegram_user_id, request_text, parse_mode="HTML")
+            
+            # Отправляем карточку матча с фото и кнопками
+            if member and member.photo_url:
+                await callback.bot.send_photo(match_telegram_user_id, member.photo_url, 
+                                            caption=match_text, reply_markup=kb, parse_mode="HTML")
             else:
-                import logging
-                logging.error(f"[cb_match_chat] No telegram_user_id in Redis for user_id={match_user.id}")
-    await asyncio.sleep(5)
+                await callback.bot.send_message(match_telegram_user_id, match_text, 
+                                              reply_markup=kb, parse_mode="HTML")
+        except Exception as e:
+            import logging
+            logging.error(f"[cb_match_chat] Failed to send match request to user_id={match_user.id}: {e}")
+    else:
+        import logging
+        logging.error(f"[cb_match_chat] No telegram_user_id in Redis for user_id={match_user.id}")
+    
+    await callback.answer()
+
+@router.callback_query(F.data.startswith("accept_match_"))
+async def cb_accept_match(callback: types.CallbackQuery, state: FSMContext):
+    """Принять запрос на подключение к матчу"""
+    from src.utils.redis import get_or_restore_internal_user_id, get_telegram_user_id
+    from urllib.parse import quote
+    
+    user_id = await get_or_restore_internal_user_id(state, callback.from_user.id)
+    if not user_id:
+        await callback.answer("Please start the bot to use this feature.", show_alert=True)
+        return
+    
+    initiator_user_id = int(callback.data.split("_")[-1])
+    
+    async with AsyncSessionLocal() as session:
+        user = await session.execute(select(User).where(User.id == user_id))
+        user = user.scalar()
+        group_id = user.current_group_id if user else None
+        
+        if not user or not group_id:
+            await callback.answer("Please start the bot to use this feature.", show_alert=True)
+            return
+        
+        initiator = await session.execute(select(User).where(User.id == initiator_user_id))
+        initiator = initiator.scalar()
+        
+        member = await session.execute(select(GroupMember).where(GroupMember.user_id == user.id, GroupMember.group_id == group_id))
+        member = member.scalar()
+        
+        initiator_member = await session.execute(select(GroupMember).where(GroupMember.user_id == initiator_user_id, GroupMember.group_id == group_id))
+        initiator_member = initiator_member.scalar()
+        
+        # Обновляем статус на "принят"
+        match_status = await session.execute(select(MatchStatus).where(
+            MatchStatus.user_id == initiator_user_id,
+            MatchStatus.group_id == group_id,
+            MatchStatus.match_user_id == user.id,
+            MatchStatus.status == "pending_approval"
+        ))
+        match_status = match_status.scalar()
+        
+        if match_status:
+            match_status.status = "accepted"
+        
+        # Создаем Match запись
+        user1_id = min(user.id, initiator.id)
+        user2_id = max(user.id, initiator.id)
+        
+        existing_match = await session.execute(select(Match).where(
+            Match.user1_id == user1_id,
+            Match.user2_id == user2_id,
+            Match.group_id == group_id
+        ))
+        existing_match = existing_match.scalar()
+        
+        if not existing_match:
+            from datetime import datetime, UTC
+            new_match = Match(user1_id=user1_id, user2_id=user2_id, group_id=group_id, 
+                            created_at=datetime.now(UTC), status="active")
+            session.add(new_match)
+        
+        await session.commit()
+    
+    # Удаляем сообщения с запросом
     try:
-        await notif.delete()
+        await callback.message.delete()
+        # Попытка удалить предыдущее сообщение (текст запроса)
+        await callback.bot.delete_message(callback.message.chat.id, callback.message.message_id - 1)
     except Exception:
         pass
+    
+    # Получаем telegram_user_id для создания чат-ссылки
+    user_telegram_id = await get_telegram_user_id(user.id)
+    initiator_telegram_id = await get_telegram_user_id(initiator.id)
+    
+    if user_telegram_id and initiator_telegram_id:
+        # Формируем ссылку для чата
+        param = quote(f"match_{user_telegram_id}_{initiator_telegram_id}")
+        link = f"https://t.me/{ALLKINDS_CHAT_BOT_USERNAME}?start={param}"
+        
+        # Отправляем кнопку для перехода в чат принимающему пользователю
+        kb = types.InlineKeyboardMarkup(inline_keyboard=[
+            [types.InlineKeyboardButton(text=get_message(BTN_GO_TO_CHAT, user=user), url=link)]
+        ])
+        
+        await callback.message.answer(
+            get_message(MATCH_REQUEST_ACCEPTED, user=user, nickname=initiator_member.nickname if initiator_member else "Unknown"),
+            reply_markup=kb
+        )
+        
+        # Уведомляем инициатора о принятии
+        if initiator_telegram_id:
+            param_initiator = quote(f"match_{initiator_telegram_id}_{user_telegram_id}")
+            link_initiator = f"https://t.me/{ALLKINDS_CHAT_BOT_USERNAME}?start={param_initiator}"
+            
+            kb_initiator = types.InlineKeyboardMarkup(inline_keyboard=[
+                [types.InlineKeyboardButton(text=get_message(BTN_GO_TO_CHAT, user=initiator), url=link_initiator)]
+            ])
+            
+            try:
+                await callback.bot.send_message(
+                    initiator_telegram_id,
+                    get_message(MATCH_REQUEST_ACCEPTED, user=initiator, nickname=member.nickname if member else "Unknown"),
+                    reply_markup=kb_initiator
+                )
+            except Exception as e:
+                import logging
+                logging.error(f"[cb_accept_match] Failed to notify initiator: {e}")
+    
+    await callback.answer()
+
+@router.callback_query(F.data.startswith("reject_match_"))
+async def cb_reject_match(callback: types.CallbackQuery, state: FSMContext):
+    """Отклонить запрос на подключение к матчу"""
+    from src.utils.redis import get_or_restore_internal_user_id, get_telegram_user_id
+    
+    user_id = await get_or_restore_internal_user_id(state, callback.from_user.id)
+    if not user_id:
+        await callback.answer("Please start the bot to use this feature.", show_alert=True)
+        return
+    
+    initiator_user_id = int(callback.data.split("_")[-1])
+    
+    async with AsyncSessionLocal() as session:
+        user = await session.execute(select(User).where(User.id == user_id))
+        user = user.scalar()
+        group_id = user.current_group_id if user else None
+        
+        if not user or not group_id:
+            await callback.answer("Please start the bot to use this feature.", show_alert=True)
+            return
+        
+        initiator = await session.execute(select(User).where(User.id == initiator_user_id))
+        initiator = initiator.scalar()
+        
+        member = await session.execute(select(GroupMember).where(GroupMember.user_id == user.id, GroupMember.group_id == group_id))
+        member = member.scalar()
+        
+        # Обновляем статус на "отклонен"
+        match_status = await session.execute(select(MatchStatus).where(
+            MatchStatus.user_id == initiator_user_id,
+            MatchStatus.group_id == group_id,
+            MatchStatus.match_user_id == user.id,
+            MatchStatus.status == "pending_approval"
+        ))
+        match_status = match_status.scalar()
+        
+        if match_status:
+            match_status.status = "rejected"
+        await session.commit()
+    
+    # Удаляем сообщения с запросом
+    try:
+        await callback.message.delete()
+        # Попытка удалить предыдущее сообщение (текст запроса)
+        await callback.bot.delete_message(callback.message.chat.id, callback.message.message_id - 1)
+    except Exception:
+        pass
+    
+    # Уведомляем инициатора об отклонении
+    initiator_telegram_id = await get_telegram_user_id(initiator.id)
+    if initiator_telegram_id:
+        try:
+            await callback.bot.send_message(
+                initiator_telegram_id,
+                get_message(MATCH_REQUEST_REJECTED, user=initiator, nickname=member.nickname if member else "Unknown")
+            )
+        except Exception as e:
+            import logging
+            logging.error(f"[cb_reject_match] Failed to notify initiator: {e}")
+    
+    await callback.answer()
+
+@router.callback_query(F.data.startswith("block_match_"))
+async def cb_block_match(callback: types.CallbackQuery, state: FSMContext):
+    """Заблокировать пользователя (больше не показывать матчи)"""
+    from src.utils.redis import get_or_restore_internal_user_id, get_telegram_user_id
+    
+    user_id = await get_or_restore_internal_user_id(state, callback.from_user.id)
+    if not user_id:
+        await callback.answer("Please start the bot to use this feature.", show_alert=True)
+        return
+    
+    initiator_user_id = int(callback.data.split("_")[-1])
+    
+    async with AsyncSessionLocal() as session:
+        user = await session.execute(select(User).where(User.id == user_id))
+        user = user.scalar()
+        group_id = user.current_group_id if user else None
+        
+        if not user or not group_id:
+            await callback.answer("Please start the bot to use this feature.", show_alert=True)
+            return
+        
+        initiator = await session.execute(select(User).where(User.id == initiator_user_id))
+        initiator = initiator.scalar()
+        
+        member = await session.execute(select(GroupMember).where(GroupMember.user_id == user.id, GroupMember.group_id == group_id))
+        member = member.scalar()
+        
+        # Устанавливаем статус "заблокирован" для запроса
+        match_status = await session.execute(select(MatchStatus).where(
+            MatchStatus.user_id == initiator_user_id,
+            MatchStatus.group_id == group_id,
+            MatchStatus.match_user_id == user.id,
+            MatchStatus.status == "pending_approval"
+        ))
+        match_status = match_status.scalar()
+        
+        if match_status:
+            match_status.status = "blocked"
+        
+        # Создаем обратную запись для блокировки (чтобы исключить этого пользователя из будущих матчей)
+        reverse_status = await session.execute(select(MatchStatus).where(
+            MatchStatus.user_id == user.id,
+            MatchStatus.group_id == group_id,
+            MatchStatus.match_user_id == initiator_user_id
+        ))
+        reverse_status = reverse_status.scalar()
+        
+        if reverse_status:
+            reverse_status.status = "hidden"
+        else:
+            new_reverse_status = MatchStatus(user_id=user.id, group_id=group_id, 
+                                           match_user_id=initiator_user_id, status="hidden")
+            session.add(new_reverse_status)
+        
+        await session.commit()
+    
+    # Удаляем сообщения с запросом
+    try:
+        await callback.message.delete()
+        # Попытка удалить предыдущее сообщение (текст запроса)
+        await callback.bot.delete_message(callback.message.chat.id, callback.message.message_id - 1)
+    except Exception:
+        pass
+    
+    # Уведомляем инициатора о блокировке
+    initiator_telegram_id = await get_telegram_user_id(initiator.id)
+    if initiator_telegram_id:
+        try:
+            await callback.bot.send_message(
+                initiator_telegram_id,
+                get_message(MATCH_REQUEST_BLOCKED, user=initiator, nickname=member.nickname if member else "Unknown")
+            )
+        except Exception as e:
+            import logging
+            logging.error(f"[cb_block_match] Failed to notify initiator: {e}")
+    
+    await callback.answer()
+
+@router.callback_query(F.data.startswith("go_to_chat_"))
+async def cb_go_to_chat(callback: types.CallbackQuery, state: FSMContext):
+    """Обработчик нажатия на кнопку 'Go to Allkinds Chat Bot' - удаляет уведомление и перенаправляет в чат-бот."""
+    # Извлекаем параметр для ссылки
+    param = callback.data.replace("go_to_chat_", "")
+    link = f"https://t.me/{ALLKINDS_CHAT_BOT_USERNAME}?start={param}"
+    
+    # Удаляем сообщение с уведомлением
+    try:
+        await callback.message.delete()
+    except Exception:
+        pass
+    
+    # Отправляем новое сообщение с URL-кнопкой
+    kb = types.InlineKeyboardMarkup(inline_keyboard=[
+        [types.InlineKeyboardButton(text="🚀 Open Allkinds Chat Bot", url=link)]
+    ])
+    await callback.message.answer("Ready to chat? Click the button below:", reply_markup=kb)
     await callback.answer()
 
 async def switch_group_service(user_id: int, group_id: int) -> dict:

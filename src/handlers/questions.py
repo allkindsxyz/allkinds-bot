@@ -21,7 +21,7 @@ from src.texts.messages import (
     QUESTION_TOO_SHORT, QUESTION_MUST_JOIN_GROUP, QUESTION_DUPLICATE, QUESTION_REJECTED, QUESTION_ADDED, QUESTION_DELETED,
     QUESTION_ALREADY_DELETED, QUESTION_ONLY_AUTHOR_OR_CREATOR, QUESTION_ANSWER_SAVED, QUESTION_NO_ANSWERED, QUESTION_MORE_ANSWERED,
     QUESTION_NO_MORE_ANSWERED, QUESTION_CAN_CHANGE_ANSWER, QUESTION_INTERNAL_ERROR, QUESTION_LOAD_ANSWERED, QUESTION_LOAD_MORE,
-    QUESTION_DELETE, UNANSWERED_QUESTIONS_MSG, BTN_LOAD_UNANSWERED
+    QUESTION_DELETE, UNANSWERED_QUESTIONS_MSG, BTN_LOAD_UNANSWERED, GROUPS_NO_NEW_QUESTIONS, NEW_QUESTION_NOTIFICATION
 )
 import logging
 from src.utils.redis import get_telegram_user_id, get_or_restore_internal_user_id
@@ -84,7 +84,7 @@ async def handle_new_question(message: types.Message, state: FSMContext):
             pass
         from src.handlers.questions import send_question_to_user
         await send_question_to_user(message.bot, user, q)
-    # --- Рассылка другим участникам после коммита ---
+    # Обновляем бейджи для других участников группы (не рассылаем вопросы)
     async with AsyncSessionLocal() as session:
         group_members = await session.execute(select(GroupMember, User).join(User).where(GroupMember.group_id == user.current_group_id))
         group_members = group_members.all()
@@ -92,9 +92,9 @@ async def handle_new_question(message: types.Message, state: FSMContext):
             if u.id == user.id:
                 continue
             try:
-                await send_question_to_user(message.bot, u, q)
+                await update_badge_for_new_question(message.bot, u, q)
             except Exception as e:
-                logging.error(f"[handle_new_question] Failed to send question to user_id={u.id}: {e}")
+                logging.error(f"[handle_new_question] Failed to update badge for user_id={u.id}: {e}")
 
 @router.callback_query(F.data.startswith("answer_"))
 async def cb_answer_question(callback: types.CallbackQuery, state: FSMContext):
@@ -146,30 +146,32 @@ async def cb_answer_question(callback: types.CallbackQuery, state: FSMContext):
         else:
             ans.value = value
             ans.status = 'answered'
-        member = await session.execute(select(GroupMember).where(GroupMember.user_id == user.id, GroupMember.group_id == question.group_id))
-        member = member.scalar()
-        if member:
-            member.balance += POINTS_FOR_ANSWER
+            member = await session.execute(select(GroupMember).where(GroupMember.user_id == user.id, GroupMember.group_id == question.group_id))
+            member = member.scalar()
+            if member:
+                member.balance += POINTS_FOR_ANSWER
         await session.commit()
         await show_question_with_selected_button(callback, question, user, value, creator_user_id)
         await callback.answer(get_message(QUESTION_ANSWER_SAVED, user=user))
-        next_q = await get_next_unanswered_question(session, question.group_id, user.id)
-        if next_q:
-            await send_question_to_user(bot, user, next_q, creator_user_id)
-        else:
-            unanswered = await session.execute(
-                select(Answer).where(
-                    Answer.user_id == user.id,
-                    Answer.status == 'delivered',
-                    Answer.value.is_(None)
-                )
-            )
-            unanswered = unanswered.scalars().all()
-            if unanswered:
-                count = len(unanswered)
-                msg = get_message(UNANSWERED_QUESTIONS_MSG, user=user, count=count)
-                kb = types.InlineKeyboardMarkup(inline_keyboard=[[types.InlineKeyboardButton(text=get_message(BTN_LOAD_UNANSWERED, user=user), callback_data="load_unanswered")]])
-                await callback.message.answer(msg, reply_markup=kb, parse_mode="HTML")
+        
+        # Показываем следующий неотвеченный вопрос из текущей группы
+        next_q_query = select(Answer, Question).join(Question, Answer.question_id == Question.id).where(
+            Answer.user_id == user.id,
+            Answer.status == 'delivered',
+            Answer.value.is_(None),
+            Question.group_id == question.group_id,
+            Question.is_deleted == 0
+        ).order_by(Question.created_at)
+        
+        next_result = await session.execute(next_q_query)
+        next_result = next_result.first()
+        
+        if next_result:
+            next_ans, next_q = next_result
+            await send_question_to_user(callback.bot, user, next_q, creator_user_id, question.group_id)
+        
+        # Обновляем бейдж после ответа (всегда)
+        await update_badge_after_answer(callback.bot, user, question.group_id)
 
 @router.callback_query(F.data.startswith("delete_question_"))
 async def cb_delete_question(callback: types.CallbackQuery, state: FSMContext):
@@ -230,9 +232,9 @@ async def cb_load_answered_questions(callback: types.CallbackQuery, state: FSMCo
         memberships = memberships.scalars().all()
         all_groups_count = len(memberships)
         answers_query = select(Answer).where(
-            Answer.user_id == user.id,
-            Answer.value.isnot(None),
-            Answer.question_id.in_(select(Question.id).where(Question.group_id == group_id, Question.is_deleted == 0))
+                Answer.user_id == user.id,
+                Answer.value.isnot(None),
+                Answer.question_id.in_(select(Question.id).where(Question.group_id == group_id, Question.is_deleted == 0))
         ).order_by(Answer.created_at)
         answers = await session.execute(answers_query.limit(ANSWERED_PAGE_SIZE))
         answers = answers.scalars().all()
@@ -245,10 +247,10 @@ async def cb_load_answered_questions(callback: types.CallbackQuery, state: FSMCo
             question = question.scalar()
             await send_answered_question_to_user(callback.bot, user, question, ans.value, group_name=group_name, all_groups_count=all_groups_count)
         total_count_query = select(Answer).where(
-            Answer.user_id == user.id,
-            Answer.value.isnot(None),
-            Answer.question_id.in_(select(Question.id).where(Question.group_id == group_id, Question.is_deleted == 0))
-        )
+                Answer.user_id == user.id,
+                Answer.value.isnot(None),
+                Answer.question_id.in_(select(Question.id).where(Question.group_id == group_id, Question.is_deleted == 0))
+            )
         total_count = await session.execute(total_count_query)
         total_count = len(total_count.scalars().all())
         print(f"[DEBUG] cb_load_answered_questions: total_count={total_count}, page=0, offset={ANSWERED_PAGE_SIZE}")
@@ -289,10 +291,10 @@ async def cb_load_answered_questions_more(callback: types.CallbackQuery, state: 
         memberships = memberships.scalars().all()
         all_groups_count = len(memberships)
         answers_query = select(Answer).where(
-            Answer.user_id == user.id,
-            Answer.value.isnot(None),
-            Answer.question_id.in_(select(Question.id).where(Question.group_id == group_id, Question.is_deleted == 0))
-        ).order_by(Answer.created_at).offset(offset).limit(ANSWERED_PAGE_SIZE)
+                Answer.user_id == user.id,
+                Answer.value.isnot(None),
+                Answer.question_id.in_(select(Question.id).where(Question.group_id == group_id, Question.is_deleted == 0))
+            ).order_by(Answer.created_at).offset(offset).limit(ANSWERED_PAGE_SIZE)
         answers = await session.execute(answers_query)
         answers = answers.scalars().all()
         print(f"[DEBUG] cb_load_answered_questions_more: answers_ids={[a.id for a in answers]}, offset={offset}")
@@ -448,6 +450,9 @@ async def send_question_to_user(bot, user, question, creator_user_id=None, group
             ans = Answer(question_id=question.id, user_id=user.id, status='delivered')
             session.add(ans)
             await session.commit()
+            logging.warning(f"[send_question_to_user] Created new Answer for question_id={question.id}, user_id={user.id}")
+        else:
+            logging.warning(f"[send_question_to_user] Answer already exists for question_id={question.id}, user_id={user.id}, status={ans.status}, value={ans.value}")
     answer_buttons = [types.InlineKeyboardButton(text=ANSWER_VALUE_TO_EMOJI[val], callback_data=f"answer_{question.id}_{val}") for val, emoji in ANSWER_VALUES]
     keyboard = [answer_buttons]
     if is_author or is_creator:
@@ -486,4 +491,104 @@ async def send_answered_question_to_user(bot, user, question, value, group_name=
     kb = types.InlineKeyboardMarkup(inline_keyboard=[row])
     telegram_user_id = await get_telegram_user_id(user.id)
     if telegram_user_id:
-        await bot.send_message(telegram_user_id, text, reply_markup=kb, parse_mode="HTML") 
+        await bot.send_message(telegram_user_id, text, reply_markup=kb, parse_mode="HTML")
+
+async def update_badge_for_new_question(bot, user, new_question):
+    """
+    Обновляет бейдж при создании нового вопроса:
+    - Если у пользователя 0 неотвеченных → отправить push + показать вопрос + бейдж
+    - Если у пользователя >0 неотвеченных → только обновить бейдж (вопрос попадает в очередь)
+    """
+    from src.utils.redis import get_telegram_user_id
+    
+    async with AsyncSessionLocal() as session:
+        # Сначала считаем сколько было неотвеченных ДО добавления нового вопроса
+        old_unanswered_count = await session.execute(
+            select(Answer).where(
+                Answer.user_id == user.id,
+                Answer.status == 'delivered',
+                Answer.value.is_(None),
+                Answer.question_id.in_(select(Question.id).where(Question.group_id == new_question.group_id, Question.is_deleted == 0))
+            )
+        )
+        old_unanswered_count = len(old_unanswered_count.scalars().all())
+        
+        # Создаем delivered Answer для нового вопроса
+        existing_ans = await session.execute(select(Answer).where(and_(Answer.question_id == new_question.id, Answer.user_id == user.id)))
+        existing_ans = existing_ans.scalar()
+        if not existing_ans:
+            session.add(Answer(question_id=new_question.id, user_id=user.id, status='delivered'))
+            await session.commit()
+        
+        # Считаем количество неотвеченных вопросов в группе ПОСЛЕ добавления
+        unanswered_count = await session.execute(
+            select(Answer).where(
+                Answer.user_id == user.id,
+                Answer.status == 'delivered',
+                Answer.value.is_(None),
+                Answer.question_id.in_(select(Question.id).where(Question.group_id == new_question.group_id, Question.is_deleted == 0))
+            )
+        )
+        unanswered_count = len(unanswered_count.scalars().all())
+        
+        telegram_user_id = await get_telegram_user_id(user.id)
+        if not telegram_user_id:
+            return
+        
+        if old_unanswered_count == 0:
+            # У пользователя не было неотвеченных вопросов - показываем новый вопрос сразу
+            try:
+                await send_question_to_user(bot, user, new_question)
+                logging.info(f"[update_badge_for_new_question] Sent new question to user {user.id} (was 0 unanswered)")
+            except Exception as e:
+                logging.error(f"[update_badge_for_new_question] Failed to send question: {e}")
+        else:
+            # У пользователя уже были неотвеченные - новый вопрос попадает в очередь
+            logging.info(f"[update_badge_for_new_question] Question added to queue for user {user.id} (had {old_unanswered_count} unanswered)")
+        
+        # Обновляем бейдж (пока только логирование)
+        try:
+            # badge_text = f"🔔 You have {unanswered_count} unanswered questions"
+            # await bot.send_message(telegram_user_id, badge_text)
+            logging.info(f"[update_badge_for_new_question] Updated badge for user {user.id}: {unanswered_count} unanswered")
+        except Exception as e:
+            logging.error(f"[update_badge_for_new_question] Failed to update badge: {e}")
+
+async def update_badge_after_answer(bot, user, group_id):
+    """
+    Обновляет бейдж после ответа на вопрос:
+    - Считает оставшиеся неотвеченные вопросы
+    - Если стало 0 → убирает бейдж
+    - Если >0 → обновляет бейдж с новым количеством
+    """
+    from src.utils.redis import get_telegram_user_id
+    
+    async with AsyncSessionLocal() as session:
+        # Считаем количество оставшихся неотвеченных вопросов в группе
+        unanswered_count = await session.execute(
+            select(Answer).where(
+                Answer.user_id == user.id,
+                Answer.status == 'delivered',
+                Answer.value.is_(None),
+                Answer.question_id.in_(select(Question.id).where(Question.group_id == group_id, Question.is_deleted == 0))
+            )
+        )
+        unanswered_count = len(unanswered_count.scalars().all())
+        
+        telegram_user_id = await get_telegram_user_id(user.id)
+        if not telegram_user_id:
+            return
+        
+        try:
+            if unanswered_count == 0:
+                # Убираем бейдж - больше нет неотвеченных вопросов
+                # badge_text = "✅ All questions answered!"
+                # await bot.send_message(telegram_user_id, badge_text)
+                logging.info(f"[update_badge_after_answer] Removed badge for user {user.id}: no more unanswered questions")
+            else:
+                # Обновляем бейдж с новым количеством
+                # badge_text = f"🔔 You have {unanswered_count} unanswered questions"
+                # await bot.send_message(telegram_user_id, badge_text)
+                logging.info(f"[update_badge_after_answer] Updated badge for user {user.id}: {unanswered_count} unanswered")
+        except Exception as e:
+            logging.error(f"[update_badge_after_answer] Failed to update badge: {e}") 

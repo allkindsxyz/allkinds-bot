@@ -1,11 +1,14 @@
 import pytest
 from sqlalchemy import select
-from src.models import User, Group, GroupMember, GroupCreator, Question, Answer
+from src.models import User, Group, GroupMember, GroupCreator, Question, Answer, Match, MatchStatus
 import random, string
 import types as pytypes
 from src.handlers.system import instructions, my_groups
 from src.services.questions import get_next_unanswered_question
 from src.handlers.questions import send_question_to_user
+from src.utils.redis import get_or_restore_internal_user_id, set_telegram_mapping, redis
+# from aiogram.fsm.storage.memory import MemoryStorage, MemoryStorageProxy
+# from aiogram.fsm.context import FSMContext
 
 pytestmark = pytest.mark.asyncio
 
@@ -456,7 +459,7 @@ async def test_mygroups_command(monkeypatch):
     await my_groups(message, state)
     assert message.deleted == [1]
     assert len(message.sent) == 2
-    assert state_data["my_groups_msg_ids"] == [2]
+    assert state_data["my_groups_msg_ids"] == [2] 
 
 @pytest.mark.asyncio
 async def test_answered_questions_load_more_button(async_session):
@@ -483,3 +486,190 @@ async def test_answered_questions_load_more_button(async_session):
     page4 = await async_session.execute(select(Answer).where(Answer.user_id == user.id, Answer.value.isnot(None)).order_by(Answer.created_at).offset(30).limit(10))
     page4 = page4.scalars().all()
     assert len(page4) == 0 
+
+class DummyState:
+    def __init__(self):
+        self._data = {}
+    async def get_data(self):
+        return self._data
+    async def update_data(self, **kwargs):
+        self._data.update(kwargs)
+    async def clear(self):
+        self._data = {}
+
+@pytest.mark.asyncio
+async def test_get_or_restore_internal_user_id_logic(async_session):
+    # 1. Новый пользователь (нет ни в Redis, ни в БД)
+    telegram_user_id = 999001
+    state = DummyState()
+    user_id = await get_or_restore_internal_user_id(state, telegram_user_id)
+    print(f"STEP1: user_id={user_id}")
+    assert user_id is not None
+    # 2. Есть в Redis и БД
+    state2 = DummyState()
+    user_id2 = await get_or_restore_internal_user_id(state2, telegram_user_id)
+    print(f"STEP2: user_id2={user_id2}")
+    assert user_id2 is not None
+    assert user_id2 == user_id
+    # 3. Есть в Redis, но нет в БД (эмулируем удаление из БД)
+    await async_session.execute(User.__table__.delete().where(User.id == user_id))
+    await async_session.commit()
+    await redis.delete(f"tg2int:{telegram_user_id}")
+    await redis.delete(f"int2tg:{user_id}")
+    state3 = DummyState()
+    user_id3 = await get_or_restore_internal_user_id(state3, telegram_user_id)
+    print(f"STEP3: user_id3={user_id3}")
+    assert user_id3 is not None
+    # id может совпасть, если sequence не сдвинулся, но mapping будет валиден
+    from src.utils.redis import get_internal_user_id
+    redis_id = await get_internal_user_id(telegram_user_id)
+    print(f"STEP4: redis_id={redis_id}")
+    assert redis_id == user_id3 
+
+async def test_two_stage_matching_logic(async_session):
+    """Тестируем двухэтапную логику подтверждения матчей"""
+    # Создаем пользователей сначала
+    user1 = User(id=1)
+    user2 = User(id=2)
+    async_session.add_all([user1, user2])
+    await async_session.commit()
+    
+    # Создаем группу 
+    group = Group(name="Test Group", description="Test", invite_code="TEST1", creator_user_id=1)
+    async_session.add(group)
+    await async_session.commit()
+    
+    # Обновляем current_group_id пользователей
+    user1.current_group_id = group.id
+    user2.current_group_id = group.id
+    
+    # Добавляем их в группу
+    member1 = GroupMember(user_id=1, group_id=group.id, nickname="User1", balance=100, 
+                         photo_url="http://test.com/1.jpg")
+    member2 = GroupMember(user_id=2, group_id=group.id, nickname="User2", balance=100,
+                         photo_url="http://test.com/2.jpg")
+    async_session.add_all([member1, member2])
+    
+    # Создаем вопросы и ответы для матчинга
+    questions = []
+    for i in range(5):
+        q = Question(group_id=group.id, author_id=1, text=f"Question {i}")
+        async_session.add(q)
+        questions.append(q)
+    
+    await async_session.commit()
+    
+    # Добавляем ответы для обоих пользователей (хорошее совпадение)
+    for q in questions:
+        answer1 = Answer(question_id=q.id, user_id=1, value=2, status='answered')
+        answer2 = Answer(question_id=q.id, user_id=2, value=2, status='answered')
+        async_session.add_all([answer1, answer2])
+    
+    await async_session.commit()
+    
+    # Тест 1: Проверим, что данные созданы корректно
+    # Убеждаемся, что у нас есть 5 вопросов для нашей группы
+    all_questions = await async_session.execute(select(Question).where(Question.group_id == group.id))
+    questions_count = len(all_questions.scalars().all())
+    assert questions_count == 5
+    
+    # Проверяем ответы для нашей группы (по 5 от каждого пользователя = 10)
+    group_answers = await async_session.execute(
+        select(Answer).where(
+            Answer.question_id.in_(select(Question.id).where(Question.group_id == group.id))
+        )
+    )
+    group_answers_count = len(group_answers.scalars().all())
+    assert group_answers_count == 10  # 5 вопросов * 2 пользователя
+    
+    # Тест 2: Тестируем создание и обновление MatchStatus
+    # Имитируем создание запроса на подключение
+    match_status = MatchStatus(user_id=1, group_id=group.id, match_user_id=2, status="pending_approval")
+    async_session.add(match_status)
+    await async_session.commit()
+    
+    # Проверяем, что статус создан
+    created_status = await async_session.execute(select(MatchStatus).where(
+        MatchStatus.user_id == 1,
+        MatchStatus.group_id == group.id,
+        MatchStatus.match_user_id == 2
+    ))
+    created_status = created_status.scalar()
+    assert created_status is not None
+    assert created_status.status == "pending_approval"
+    
+    # Тест 3: Принятие запроса
+    # Обновляем статус на "accepted"
+    match_status.status = "accepted"
+    
+    # Создаем Match запись
+    match_record = Match(user1_id=1, user2_id=2, group_id=group.id, status="active")
+    async_session.add(match_record)
+    await async_session.commit()
+    
+    # Проверяем, что Match создан
+    created_match = await async_session.execute(select(Match).where(
+        Match.user1_id == 1, Match.user2_id == 2, Match.group_id == group.id
+    ))
+    created_match = created_match.scalar()
+    assert created_match is not None
+    assert created_match.status == "active"
+    
+    # Тест 4: Отклонение запроса
+    # Создаем новый запрос для тестирования отклонения
+    user3 = User(id=3, current_group_id=group.id)
+    member3 = GroupMember(user_id=3, group_id=group.id, nickname="User3", balance=100)
+    async_session.add_all([user3, member3])
+    await async_session.commit()
+    
+    # Создаем запрос от пользователя 3 к пользователю 1
+    rejected_status = MatchStatus(user_id=3, group_id=group.id, match_user_id=1, status="pending_approval")
+    async_session.add(rejected_status)
+    await async_session.commit()
+    
+    # Отклоняем запрос
+    rejected_status.status = "rejected"
+    await async_session.commit()
+    
+    # Проверяем, что статус обновился
+    updated_status = await async_session.execute(select(MatchStatus).where(
+        MatchStatus.user_id == 3,
+        MatchStatus.group_id == group.id,
+        MatchStatus.match_user_id == 1
+    ))
+    updated_status = updated_status.scalar()
+    assert updated_status is not None
+    assert updated_status.status == "rejected"
+    
+    # Тест 5: Блокировка пользователя
+    # Создаем запрос от пользователя 3 к пользователю 2
+    blocked_status = MatchStatus(user_id=3, group_id=group.id, match_user_id=2, status="pending_approval")
+    async_session.add(blocked_status)
+    await async_session.commit()
+    
+    # Блокируем пользователя
+    blocked_status.status = "blocked"
+    
+    # Создаем обратную запись для блокировки
+    reverse_block = MatchStatus(user_id=2, group_id=group.id, match_user_id=3, status="hidden")
+    async_session.add(reverse_block)
+    await async_session.commit()
+    
+    # Проверяем статусы
+    blocked_check = await async_session.execute(select(MatchStatus).where(
+        MatchStatus.user_id == 3,
+        MatchStatus.group_id == group.id,
+        MatchStatus.match_user_id == 2
+    ))
+    blocked_check = blocked_check.scalar()
+    assert blocked_check is not None
+    assert blocked_check.status == "blocked"
+    
+    reverse_check = await async_session.execute(select(MatchStatus).where(
+        MatchStatus.user_id == 2,
+        MatchStatus.group_id == group.id,
+        MatchStatus.match_user_id == 3
+    ))
+    reverse_check = reverse_check.scalar()
+    assert reverse_check is not None
+    assert reverse_check.status == "hidden" 

@@ -7,18 +7,29 @@ import os, logging
 from sqlalchemy import select, func
 from src.utils.invite_code import generate_unique_invite_code
 from src.constants import WELCOME_BONUS
+from src.utils.redis import get_or_restore_internal_user_id
 
 ADMIN_USER_ID = int(os.getenv('ADMIN_USER_ID', 0))
 
+class DummyState:
+    def __init__(self):
+        self._data = {}
+    async def get_data(self):
+        return self._data
+    async def update_data(self, **kwargs):
+        self._data.update(kwargs)
+    async def clear(self):
+        self._data = {}
+
 async def ensure_admin_in_db() -> None:
     """Ensure the admin user and creator record exist in the DB."""
+    telegram_admin_id = int(os.getenv('ADMIN_USER_ID', 0))
+    internal_user_id = await get_or_restore_internal_user_id(DummyState(), telegram_admin_id)
     async with AsyncSessionLocal() as session:
-        user = await session.execute(select(User).where(User.id == ADMIN_USER_ID))
+        user = await session.execute(select(User).where(User.id == internal_user_id))
         user = user.scalar()
         if not user:
-            user = User()
-            session.add(user)
-            await session.flush()
+            raise Exception(f"Admin user with internal id {internal_user_id} not found after get_or_restore_internal_user_id.")
         creator = await session.execute(select(GroupCreator).where(GroupCreator.user_id == user.id))
         creator = creator.scalar()
         if not creator:
@@ -172,6 +183,8 @@ async def create_group_service(user_id: int, name: str, description: str) -> dic
             user = User()
             session.add(user)
             await session.flush()
+            await session.commit()
+            print(f"[DEBUG] User created and committed (create_group_service): id={user.id}")
         group = Group(name=name, description=description, invite_code=invite_code, creator_user_id=user.id)
         session.add(group)
         await session.flush()
@@ -180,9 +193,9 @@ async def create_group_service(user_id: int, name: str, description: str) -> dic
         if not member:
             member = GroupMember(user_id=user.id, group_id=group.id)
             session.add(member)
-        user.current_group_id = group.id
-        await session.commit()
-        return {"id": group.id, "name": group.name, "invite_code": group.invite_code}
+            user.current_group_id = group.id
+            await session.commit()
+            return {"id": group.id, "name": group.name, "invite_code": group.invite_code}
 
 async def join_group_by_code_service(user_id: int, code: str) -> dict | None:
     """Вступить в группу по коду. Вернуть данные группы или None."""
@@ -284,7 +297,7 @@ async def find_best_match(user_id: int, group_id: int, exclude_user_ids: list[in
         statuses = await session.execute(select(MatchStatus.match_user_id, MatchStatus.status).where(
             MatchStatus.user_id == user.id, MatchStatus.group_id == group_id))
         for match_user_id, status in statuses.all():
-            if status in ("hidden", "postponed"):
+            if status in ("hidden", "postponed", "pending_approval", "rejected", "blocked"):
                 exclude_user_ids.append(match_user_id)
         # Получаем все ответы пользователя по вопросам группы
         user_answers = await session.execute(

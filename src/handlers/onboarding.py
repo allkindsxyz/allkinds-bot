@@ -9,9 +9,9 @@ from src.fsm.states import Onboarding
 from src.db import AsyncSessionLocal
 from src.models import User, Answer, Question
 from src.services.questions import get_next_unanswered_question
-from src.handlers.questions import send_question_to_user
+from src.handlers.questions import send_question_to_user, update_badge_after_answer
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
-from sqlalchemy import select
+from sqlalchemy import select, and_
 from src.texts.messages import (
     ONBOARDING_NICKNAME_TOO_SHORT, ONBOARDING_INTERNAL_ERROR, ONBOARDING_SEND_PHOTO, ONBOARDING_PHOTO_REQUIRED,
     ONBOARDING_SEND_LOCATION, ONBOARDING_LOCATION_REQUIRED, ONBOARDING_LOCATION_SAVED, ONBOARDING_SOMETHING_WRONG,
@@ -39,8 +39,8 @@ async def onboarding_nickname(message: types.Message, state: FSMContext):
             await state.clear()
             return
         await save_nickname_service(user_id, group_id, nickname)
-        await state.set_state(Onboarding.photo)
-        await message.answer(get_message("ONBOARDING_SEND_PHOTO", user or message.from_user), reply_markup=types.ReplyKeyboardRemove())
+    await state.set_state(Onboarding.photo)
+    await message.answer(get_message("ONBOARDING_SEND_PHOTO", user or message.from_user), reply_markup=types.ReplyKeyboardRemove())
 
 @router.message(Onboarding.photo)
 async def onboarding_photo(message: types.Message, state: FSMContext):
@@ -59,12 +59,15 @@ async def onboarding_photo(message: types.Message, state: FSMContext):
             await state.clear()
             return
         await save_photo_service(user_id, group_id, file_id)
-        await state.set_state(Onboarding.location)
-        await message.answer(get_message("ONBOARDING_SEND_LOCATION", user or message.from_user), reply_markup=types.ReplyKeyboardMarkup(
+    await state.set_state(Onboarding.location)
+    await message.answer(
+        get_message("ONBOARDING_SEND_LOCATION", user or message.from_user),
+        reply_markup=types.ReplyKeyboardMarkup(
             keyboard=[[types.KeyboardButton(text=get_message("BTN_SEND_LOCATION", user or message.from_user), request_location=True)]],
             resize_keyboard=True,
             one_time_keyboard=True
-        ))
+        )
+    )
 
 @router.message(Onboarding.location)
 async def onboarding_location(message: types.Message, state: FSMContext):
@@ -91,7 +94,21 @@ async def onboarding_location(message: types.Message, state: FSMContext):
             return
         complete = await is_onboarding_complete_service(user_id, group_id)
         if complete:
+            # Создаем delivered ответы для всех существующих вопросов в группе
+            questions = await session.execute(select(Question).where(Question.group_id == group_id, Question.is_deleted == 0))
+            questions = questions.scalars().all()
+            for question in questions:
+                ans = await session.execute(select(Answer).where(and_(Answer.question_id == question.id, Answer.user_id == user_id)))
+                ans = ans.scalar()
+                if not ans:
+                    session.add(Answer(question_id=question.id, user_id=user_id, status='delivered'))
+            await session.commit()
+            
+            # Обновляем бейдж с количеством неотвеченных вопросов
+            await update_badge_after_answer(message.bot, user, group_id)
+            
             await state.clear()
+            await state.update_data(internal_user_id=user_id)
             await message.answer(get_message("ONBOARDING_LOCATION_SAVED", user or message.from_user))
             from src.handlers.groups import show_group_welcome_and_question
             await show_group_welcome_and_question(message, user_id, group_id)
@@ -132,7 +149,11 @@ async def show_group_main_flow_after_onboarding(message, telegram_user_id, group
         # Ищем первый неотвеченный вопрос
         next_q = await get_next_unanswered_question(session, group_id, user.id)
         if next_q:
-            await send_question_to_user(message.bot, user, next_q)
+            # Проверяем, не был ли этот вопрос уже доставлен
+            existing_ans = await session.execute(select(Answer).where(and_(Answer.question_id == next_q.id, Answer.user_id == user.id)))
+            existing_ans = existing_ans.scalar()
+            if not existing_ans or existing_ans.status != 'delivered':
+                await send_question_to_user(message.bot, user, next_q)
         else:
             await message.answer("No new questions in this group yet.")
         # Кнопка Load answered questions — только если есть хотя бы один ответ

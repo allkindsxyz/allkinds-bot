@@ -25,7 +25,7 @@ async def save_nickname_service(user_id: int, group_id: int, nickname: str) -> N
                 await session.flush()
         else:
             member.nickname = nickname
-        await session.commit()
+            await session.commit()
 
 async def save_photo_service(user_id: int, group_id: int, photo_url: str) -> None:
     async with AsyncSessionLocal() as session:

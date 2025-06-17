@@ -12,7 +12,7 @@ from src.db import AsyncSessionLocal
 from sqlalchemy import select
 from src.models import User, GroupMember, GroupCreator
 from src.keyboards.groups import get_user_keyboard, get_admin_keyboard, get_group_reply_keyboard
-from src.utils.redis import get_internal_user_id, set_telegram_mapping, update_ttl
+from src.utils.redis import get_internal_user_id, set_telegram_mapping, update_ttl, get_or_restore_internal_user_id
 import os
 
 router = Router()
@@ -99,16 +99,8 @@ async def start(message: types.Message, state: FSMContext):
         await ensure_admin_in_db()  # Гарантируем, что супер-админ есть в GroupCreator
         await hide_instructions_and_mygroups_by_message(message, state)
         telegram_user_id = message.from_user.id
-        # --- Получаем internal_user_id через Redis ---
-        internal_user_id = await get_internal_user_id(telegram_user_id)
-        if not internal_user_id:
-            # Новый пользователь
-            async with AsyncSessionLocal() as session:
-                user = User()
-                session.add(user)
-                await session.flush()
-                internal_user_id = user.id
-                await set_telegram_mapping(telegram_user_id, internal_user_id)
+        # --- Получаем internal_user_id централизованно ---
+        internal_user_id = await get_or_restore_internal_user_id(state, telegram_user_id)
         await state.update_data(internal_user_id=internal_user_id)
         # --- Проверка версии ---
         user_data = await state.get_data()
@@ -285,8 +277,8 @@ async def extend_token_callback(callback: types.CallbackQuery, state: FSMContext
 
 @router.message(Command("myid"))
 async def myid_command(message: types.Message, state: FSMContext):
-    data = await state.get_data()
-    user_id = data.get('internal_user_id')
+    from src.utils.redis import get_or_restore_internal_user_id
+    user_id = await get_or_restore_internal_user_id(state, message.from_user.id)
     if not user_id:
         await message.answer("User not found. Please use /start first.")
         return
@@ -303,37 +295,14 @@ async def add_creator_command(message: types.Message, state: FSMContext):
         await message.answer("You are not authorized to use this command.")
         return
     telegram_id = int(args[1])
-    from src.utils.redis import get_internal_user_id, set_telegram_mapping, redis
-    internal_user_id = await get_internal_user_id(telegram_id)
+    from src.utils.redis import get_or_restore_internal_user_id
+    internal_user_id = await get_or_restore_internal_user_id(state, telegram_id)
     from src.models import GroupCreator, User
-    if not internal_user_id:
-        # Создаём пользователя и сразу добавляем в GroupCreator в одной транзакции
-        async with AsyncSessionLocal() as session:
-            user = User()
-            session.add(user)
-            await session.flush()
-            internal_user_id = user.id
-            await set_telegram_mapping(telegram_id, internal_user_id)
-            session.add(GroupCreator(user_id=user.id))
-            await session.commit()
-            await message.answer(f"User {telegram_id} created and added to group_creators (internal id: {user.id}).")
-            return
-    # Если internal_user_id есть, ищем пользователя в БД
     async with AsyncSessionLocal() as session:
         user = await session.execute(select(User).where(User.id == internal_user_id))
         user = user.scalar()
         if not user:
-            # Mapping в Redis устарел — удаляем и пересоздаём пользователя
-            await redis.delete(f"tg2int:{telegram_id}")
-            await redis.delete(f"int2tg:{internal_user_id}")
-            user = User()
-            session.add(user)
-            await session.flush()
-            internal_user_id = user.id
-            await set_telegram_mapping(telegram_id, internal_user_id)
-            session.add(GroupCreator(user_id=user.id))
-            await session.commit()
-            await message.answer(f"User {telegram_id} mapping was stale. User recreated and added to group_creators (internal id: {user.id}).")
+            await message.answer(f"Internal error: user not found after mapping (id: {internal_user_id})")
             return
         exists = await session.execute(select(GroupCreator).where(GroupCreator.user_id == user.id))
         if exists.scalar():
