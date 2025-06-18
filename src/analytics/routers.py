@@ -1,10 +1,17 @@
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import FastAPI, APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import List, Optional
 
 from ..db import get_session
 from .services import AnalyticsService
 from .schemas import GroupSummary, GroupStats, GlobalStats
+
+# Create FastAPI app
+app = FastAPI(
+    title="Allkinds Bot Analytics",
+    description="Analytics API for Allkinds Bot platform",
+    version="1.0.0"
+)
 
 router = APIRouter()
 
@@ -74,4 +81,14 @@ async def get_group_timeline(
         raise HTTPException(status_code=404, detail="Group not found")
     
     # Return timeline placeholder for now
-    return {"message": "Timeline endpoint - coming soon", "group_id": group_id, "days": days} 
+    return {"message": "Timeline endpoint - coming soon", "group_id": group_id, "days": days}
+
+
+# Include router in the app
+app.include_router(router, prefix="/analytics", tags=["analytics"])
+
+
+@app.get("/")
+async def root():
+    """Health check endpoint"""
+    return {"message": "Allkinds Bot Analytics API", "status": "running"} 
