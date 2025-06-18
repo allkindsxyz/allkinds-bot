@@ -124,4 +124,19 @@ async def health_check():
         "database": db_status,
         "database_url_present": bool(database_url != "not_set"),
         "database_url_prefix": database_url[:20] if database_url != "not_set" else "none"
+    }
+
+
+@app.get("/test")
+async def test_endpoint():
+    """Simple test endpoint without database queries"""
+    return {
+        "message": "Test endpoint works",
+        "timestamp": "2025-01-18T12:00:00Z",
+        "test_data": {
+            "total_users": 65,
+            "total_groups": 1,
+            "total_questions": 43,
+            "total_answers": 444
+        }
     } 
