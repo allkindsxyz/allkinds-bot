@@ -81,13 +81,17 @@ class AnalyticsService:
         answers_result = await self.session.execute(answers_query)
         total_answers = answers_result.scalar() or 0
         
-        # Active users today (simplified - users who answered questions today)
+        # Active users today (users with nickname who answered questions today with non-null values)
         today_start = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
         active_today_query = (
             select(func.count(func.distinct(Answer.user_id)))
+            .join(GroupMember, Answer.user_id == GroupMember.user_id)
             .join(Question, Answer.question_id == Question.id)
             .where(
                 and_(
+                    GroupMember.group_id == group_id,
+                    GroupMember.nickname.isnot(None),
+                    Answer.value.isnot(None),
                     Question.group_id == group_id,
                     Answer.created_at >= today_start
                 )
@@ -96,13 +100,17 @@ class AnalyticsService:
         active_today_result = await self.session.execute(active_today_query)
         active_users_today = active_today_result.scalar() or 0
         
-        # Active users this week
+        # Active users this week (users with nickname who answered questions this week with non-null values)
         week_start = today_start - timedelta(days=7)
         active_week_query = (
             select(func.count(func.distinct(Answer.user_id)))
+            .join(GroupMember, Answer.user_id == GroupMember.user_id)
             .join(Question, Answer.question_id == Question.id)
             .where(
                 and_(
+                    GroupMember.group_id == group_id,
+                    GroupMember.nickname.isnot(None),
+                    Answer.value.isnot(None),
                     Question.group_id == group_id,
                     Answer.created_at >= week_start
                 )
@@ -205,20 +213,36 @@ class AnalyticsService:
         answers_result = await self.session.execute(answers_query)
         total_answers = answers_result.scalar() or 0
         
-        # Active users today
+        # Active users today (users with nickname who answered questions today with non-null values)
         today_start = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
         active_today_query = (
             select(func.count(func.distinct(Answer.user_id)))
-            .where(Answer.created_at >= today_start)
+            .join(GroupMember, Answer.user_id == GroupMember.user_id)
+            .join(Question, Answer.question_id == Question.id)
+            .where(
+                and_(
+                    GroupMember.nickname.isnot(None),
+                    Answer.value.isnot(None),
+                    Answer.created_at >= today_start
+                )
+            )
         )
         active_today_result = await self.session.execute(active_today_query)
         active_users_today = active_today_result.scalar() or 0
         
-        # Active users this week
+        # Active users this week (users with nickname who answered questions this week with non-null values)
         week_start = today_start - timedelta(days=7)
         active_week_query = (
             select(func.count(func.distinct(Answer.user_id)))
-            .where(Answer.created_at >= week_start)
+            .join(GroupMember, Answer.user_id == GroupMember.user_id)
+            .join(Question, Answer.question_id == Question.id)
+            .where(
+                and_(
+                    GroupMember.nickname.isnot(None),
+                    Answer.value.isnot(None),
+                    Answer.created_at >= week_start
+                )
+            )
         )
         active_week_result = await self.session.execute(active_week_query)
         active_users_week = active_week_result.scalar() or 0
