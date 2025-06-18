@@ -91,4 +91,29 @@ app.include_router(router, prefix="/analytics", tags=["analytics"])
 @app.get("/")
 async def root():
     """Health check endpoint"""
-    return {"message": "Allkinds Bot Analytics API", "status": "running"} 
+    return {"message": "Allkinds Bot Analytics API", "status": "running"}
+
+
+@app.get("/health")
+async def health_check():
+    """Detailed health check with database connectivity"""
+    import os
+    from ..db import engine
+    
+    try:
+        # Test database connection
+        async with engine.begin() as conn:
+            await conn.execute("SELECT 1")
+        db_status = "connected"
+    except Exception as e:
+        db_status = f"error: {str(e)[:100]}"
+    
+    database_url = os.getenv("DATABASE_URL", "not_set")
+    
+    return {
+        "message": "Allkinds Bot Analytics API", 
+        "status": "running",
+        "database": db_status,
+        "database_url_present": bool(database_url != "not_set"),
+        "database_url_prefix": database_url[:20] if database_url != "not_set" else "none"
+    } 

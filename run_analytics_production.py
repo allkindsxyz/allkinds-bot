@@ -21,6 +21,13 @@ def main():
     try:
         logger.info("Starting analytics service...")
         
+        # Check database configuration
+        database_url = os.getenv("DATABASE_URL")
+        if database_url:
+            logger.info(f"Using DATABASE_URL from environment (masked): {database_url[:20]}...")
+        else:
+            logger.info("DATABASE_URL not found, will use individual components")
+        
         # Get port from environment or use default
         port = int(os.getenv("PORT", 8000))
         host = "0.0.0.0"
