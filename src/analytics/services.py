@@ -72,11 +72,16 @@ class AnalyticsService:
         questions_result = await self.session.execute(questions_query)
         total_questions = questions_result.scalar() or 0
         
-        # Get answer count
+        # Get answer count (only answers with non-null values)
         answers_query = (
             select(func.count(Answer.id))
             .join(Question, Answer.question_id == Question.id)
-            .where(Question.group_id == group_id)
+            .where(
+                and_(
+                    Question.group_id == group_id,
+                    Answer.value.isnot(None)
+                )
+            )
         )
         answers_result = await self.session.execute(answers_query)
         total_answers = answers_result.scalar() or 0
@@ -208,8 +213,8 @@ class AnalyticsService:
         questions_result = await self.session.execute(questions_query)
         total_questions = questions_result.scalar() or 0
         
-        # Total answers
-        answers_query = select(func.count(Answer.id))
+        # Total answers (only answers with non-null values)
+        answers_query = select(func.count(Answer.id)).where(Answer.value.isnot(None))
         answers_result = await self.session.execute(answers_query)
         total_answers = answers_result.scalar() or 0
         
