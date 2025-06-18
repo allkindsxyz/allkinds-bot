@@ -24,7 +24,15 @@ def main():
         # Check database configuration
         database_url = os.getenv("DATABASE_URL")
         if database_url:
-            logger.info(f"Using DATABASE_URL from environment (masked): {database_url[:20]}...")
+            logger.info(f"Using DATABASE_URL from environment (masked): {database_url[:30]}...")
+            # Log the protocol to debug async driver issues
+            if database_url.startswith("postgres://"):
+                logger.info("DATABASE_URL uses postgres:// - will convert to postgresql+asyncpg://")
+            elif database_url.startswith("postgresql://"):
+                if "+asyncpg" in database_url:
+                    logger.info("DATABASE_URL already has asyncpg driver")
+                else:
+                    logger.info("DATABASE_URL uses postgresql:// - will convert to postgresql+asyncpg://")
         else:
             logger.info("DATABASE_URL not found, will use individual components")
         
