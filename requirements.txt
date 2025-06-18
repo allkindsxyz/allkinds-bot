@@ -1,5 +1,5 @@
 aiogram
-sqlalchemy>=1.4,<2.0
+sqlalchemy>=2.0.0
 alembic>=1.7,<2.0
 python-dotenv
 psycopg2-binary
@@ -7,4 +7,6 @@ asyncpg
 pytest>=7.0.0
 pytest-asyncio>=0.20.0
 testcontainers[postgresql]>=3.7.0 
-redis[async] 
+redis[async]
+fastapi>=0.104.0
+uvicorn[standard]>=0.24.0 
