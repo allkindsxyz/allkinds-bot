@@ -1,10 +1,12 @@
 from fastapi import FastAPI, APIRouter, Depends, HTTPException, Query
+from fastapi.responses import HTMLResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import List, Optional
 
 from ..db import get_session
 from .services import AnalyticsService
 from .schemas import GroupSummary, GroupStats, GlobalStats
+from .dashboard import DASHBOARD_HTML
 
 # Create FastAPI app
 app = FastAPI(
@@ -88,9 +90,15 @@ async def get_group_timeline(
 app.include_router(router, prefix="/analytics", tags=["analytics"])
 
 
-@app.get("/")
-async def root():
-    """Health check endpoint"""
+@app.get("/", response_class=HTMLResponse)
+async def dashboard():
+    """Analytics dashboard with charts and tables"""
+    return DASHBOARD_HTML
+
+
+@app.get("/api")
+async def api_root():
+    """API health check endpoint"""
     return {"message": "Allkinds Bot Analytics API", "status": "running"}
 
 

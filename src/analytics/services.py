@@ -21,12 +21,11 @@ class AnalyticsService:
                 Group.name,
                 Group.description,
                 Group.created_at,
-                User.name.label('creator_name'),
+                Group.creator_user_id.label('creator_user_id'),
                 func.count(GroupMember.user_id).label('member_count')
             )
-            .join(User, Group.creator_id == User.id)
             .outerjoin(GroupMember, Group.id == GroupMember.group_id)
-            .group_by(Group.id, Group.name, Group.description, Group.created_at, User.name)
+            .group_by(Group.id, Group.name, Group.description, Group.created_at, Group.creator_user_id)
             .order_by(Group.created_at.desc())
         )
         
@@ -38,7 +37,7 @@ class AnalyticsService:
                 id=row.id,
                 name=row.name,
                 description=row.description,
-                creator_name=row.creator_name,
+                creator_name=f"User #{row.creator_user_id}",  # Use user ID as name
                 created_at=row.created_at,
                 member_count=row.member_count or 0
             )
@@ -54,13 +53,12 @@ class AnalyticsService:
                 Group.name,
                 Group.description,
                 Group.created_at,
-                User.name.label('creator_name'),
+                Group.creator_user_id.label('creator_user_id'),
                 func.count(GroupMember.user_id).label('member_count')
             )
-            .join(User, Group.creator_id == User.id)
             .outerjoin(GroupMember, Group.id == GroupMember.group_id)
             .where(Group.id == group_id)
-            .group_by(Group.id, Group.name, Group.description, Group.created_at, User.name)
+            .group_by(Group.id, Group.name, Group.description, Group.created_at, Group.creator_user_id)
         )
         
         result = await self.session.execute(group_query)
@@ -117,7 +115,7 @@ class AnalyticsService:
             id=group_row.id,
             name=group_row.name,
             description=group_row.description,
-            creator_name=group_row.creator_name,
+            creator_name=f"User #{group_row.creator_user_id}",  # Use user ID as name
             created_at=group_row.created_at,
             member_count=group_row.member_count or 0,
             total_questions=total_questions,
