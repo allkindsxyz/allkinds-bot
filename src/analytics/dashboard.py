@@ -18,15 +18,23 @@ DASHBOARD_HTML = """
         .stat-label { color: #666; font-size: 0.9em; }
         .chart-container { background: white; padding: 20px; border-radius: 12px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); margin-bottom: 20px; }
         .groups-list { background: white; padding: 20px; border-radius: 12px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
-        .group-item { padding: 15px; border-bottom: 1px solid #eee; display: flex; justify-content: space-between; align-items: center; }
+        .group-item { padding: 15px; border-bottom: 1px solid #eee; display: flex; justify-content: space-between; align-items: center; cursor: pointer; transition: background-color 0.2s; }
+        .group-item:hover { background-color: #f8f9fa; }
         .group-item:last-child { border-bottom: none; }
-        .group-name { font-weight: 600; }
+        .group-name { font-weight: 600; color: #007AFF; }
         .group-stats { color: #666; font-size: 0.9em; }
         .refresh-btn { background: #007AFF; color: white; border: none; padding: 10px 20px; border-radius: 8px; cursor: pointer; margin-left: 10px; }
         .refresh-btn:hover { background: #0056b3; }
         .loading { text-align: center; padding: 20px; color: #666; }
         .error { text-align: center; padding: 20px; color: #FF3B30; background: #FFE5E5; border-radius: 8px; margin: 10px 0; }
         .debug { background: #f0f0f0; padding: 10px; border-radius: 8px; margin: 10px 0; font-family: monospace; font-size: 0.8em; }
+        .back-btn { background: #666; color: white; border: none; padding: 10px 20px; border-radius: 8px; cursor: pointer; margin-right: 10px; }
+        .back-btn:hover { background: #555; }
+        .group-details { background: white; padding: 20px; border-radius: 12px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); margin-bottom: 20px; }
+        .detail-row { display: flex; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid #eee; }
+        .detail-row:last-child { border-bottom: none; }
+        .detail-label { font-weight: 600; }
+        .detail-value { color: #007AFF; font-weight: bold; }
     </style>
 </head>
 <body>
@@ -34,33 +42,49 @@ DASHBOARD_HTML = """
         <div class="header">
             <h1>📊 Allkinds Bot Analytics</h1>
             <p>Real-time analytics for your Telegram bot platform</p>
-            <button class="refresh-btn" onclick="loadData()">🔄 Refresh</button>
-            <button class="refresh-btn" onclick="testAPI()" style="background: #FF9500;">🧪 Test API</button>
+            <div>
+                <button class="back-btn" id="backBtn" onclick="showOverview()" style="display: none;">← Back to Overview</button>
+                <button class="refresh-btn" onclick="loadData()">🔄 Refresh</button>
+                <button class="refresh-btn" onclick="testAPI()" style="background: #FF9500;">🧪 Test API</button>
+            </div>
         </div>
         
         <div class="loading" id="loading">Loading analytics data...</div>
         <div class="error" id="error" style="display: none;"></div>
         <div class="debug" id="debug" style="display: none;"></div>
         
-        <div class="stats-grid" id="statsGrid" style="display: none;">
-            <!-- Stats will be loaded here -->
+        <!-- Overview Section -->
+        <div id="overviewSection">
+            <div class="stats-grid" id="statsGrid" style="display: none;">
+                <!-- Stats will be loaded here -->
+            </div>
+            
+            <div class="chart-container" id="chartContainer" style="display: none;">
+                <h3>Activity Overview</h3>
+                <canvas id="activityChart" width="400" height="200"></canvas>
+            </div>
+            
+            <div class="groups-list" id="groupsContainer" style="display: none;">
+                <h3>Groups (click to view details)</h3>
+                <div id="groupsList">
+                    <!-- Groups will be loaded here -->
+                </div>
+            </div>
         </div>
         
-        <div class="chart-container" id="chartContainer" style="display: none;">
-            <h3>Activity Overview</h3>
-            <canvas id="activityChart" width="400" height="200"></canvas>
-        </div>
-        
-        <div class="groups-list" id="groupsContainer" style="display: none;">
-            <h3>Groups</h3>
-            <div id="groupsList">
-                <!-- Groups will be loaded here -->
+        <!-- Group Details Section -->
+        <div id="groupDetailsSection" style="display: none;">
+            <div class="group-details" id="groupDetailsContainer">
+                <!-- Group details will be loaded here -->
             </div>
         </div>
     </div>
     
     <script>
         let activityChart;
+        let currentGroupId = null;
+        let globalData = null;
+        let groupsData = null;
         
         function showError(message, details = null) {
             const errorDiv = document.getElementById('error');
@@ -80,6 +104,94 @@ DASHBOARD_HTML = """
         function hideError() {
             document.getElementById('error').style.display = 'none';
             document.getElementById('debug').style.display = 'none';
+        }
+        
+        function showOverview() {
+            currentGroupId = null;
+            document.getElementById('overviewSection').style.display = 'block';
+            document.getElementById('groupDetailsSection').style.display = 'none';
+            document.getElementById('backBtn').style.display = 'none';
+            
+            if (globalData && groupsData) {
+                updateStats(globalData);
+                updateChart(globalData);
+                updateGroups(groupsData);
+                
+                document.getElementById('loading').style.display = 'none';
+                document.getElementById('statsGrid').style.display = 'grid';
+                document.getElementById('chartContainer').style.display = 'block';
+                document.getElementById('groupsContainer').style.display = 'block';
+            }
+        }
+        
+        async function showGroupDetails(groupId) {
+            currentGroupId = groupId;
+            hideError();
+            document.getElementById('loading').innerHTML = `Loading group ${groupId} details...`;
+            document.getElementById('loading').style.display = 'block';
+            document.getElementById('overviewSection').style.display = 'none';
+            document.getElementById('groupDetailsSection').style.display = 'block';
+            document.getElementById('backBtn').style.display = 'inline-block';
+            
+            try {
+                const response = await fetch(`/analytics/${groupId}/stats`);
+                console.log(`Group ${groupId} response status:`, response.status);
+                
+                if (!response.ok) {
+                    throw new Error(`Group stats API returned ${response.status}: ${response.statusText}`);
+                }
+                
+                const groupStats = await response.json();
+                console.log(`Group ${groupId} stats:`, groupStats);
+                
+                updateGroupDetails(groupStats);
+                document.getElementById('loading').style.display = 'none';
+                
+            } catch (error) {
+                console.error(`Error loading group ${groupId} details:`, error);
+                showError(`Failed to load group ${groupId} details`, {
+                    error: error.message,
+                    groupId: groupId,
+                    timestamp: new Date().toISOString()
+                });
+            }
+        }
+        
+        function updateGroupDetails(groupStats) {
+            const container = document.getElementById('groupDetailsContainer');
+            container.innerHTML = `
+                <h2>📊 ${groupStats.name}</h2>
+                <p style="color: #666; margin-bottom: 20px;">${groupStats.description}</p>
+                
+                <div class="detail-row">
+                    <span class="detail-label">👥 Total Members</span>
+                    <span class="detail-value">${groupStats.member_count}</span>
+                </div>
+                <div class="detail-row">
+                    <span class="detail-label">👑 Creator</span>
+                    <span class="detail-value">${groupStats.creator_name}</span>
+                </div>
+                <div class="detail-row">
+                    <span class="detail-label">📅 Created</span>
+                    <span class="detail-value">${new Date(groupStats.created_at).toLocaleDateString()}</span>
+                </div>
+                <div class="detail-row">
+                    <span class="detail-label">❓ Total Questions</span>
+                    <span class="detail-value">${groupStats.total_questions}</span>
+                </div>
+                <div class="detail-row">
+                    <span class="detail-label">💬 Total Answers</span>
+                    <span class="detail-value">${groupStats.total_answers}</span>
+                </div>
+                <div class="detail-row">
+                    <span class="detail-label">⚡ Active Today</span>
+                    <span class="detail-value">${groupStats.active_users_today}</span>
+                </div>
+                <div class="detail-row">
+                    <span class="detail-label">📅 Active This Week</span>
+                    <span class="detail-value">${groupStats.active_users_week}</span>
+                </div>
+            `;
         }
         
         async function testAPI() {
@@ -106,6 +218,13 @@ DASHBOARD_HTML = """
             hideError();
             document.getElementById('loading').innerHTML = 'Loading analytics data...';
             document.getElementById('loading').style.display = 'block';
+            
+            if (currentGroupId) {
+                // Reload group details if we're viewing a specific group
+                showGroupDetails(currentGroupId);
+                return;
+            }
+            
             document.getElementById('statsGrid').style.display = 'none';
             document.getElementById('chartContainer').style.display = 'none';
             document.getElementById('groupsContainer').style.display = 'none';
@@ -120,8 +239,8 @@ DASHBOARD_HTML = """
                     throw new Error(`Global stats API returned ${globalResponse.status}: ${globalResponse.statusText}`);
                 }
                 
-                const globalStats = await globalResponse.json();
-                console.log('Global stats:', globalStats);
+                globalData = await globalResponse.json();
+                console.log('Global stats:', globalData);
                 
                 // Load groups
                 console.log('Fetching groups...');
@@ -132,12 +251,12 @@ DASHBOARD_HTML = """
                     throw new Error(`Groups API returned ${groupsResponse.status}: ${groupsResponse.statusText}`);
                 }
                 
-                const groups = await groupsResponse.json();
-                console.log('Groups:', groups);
+                groupsData = await groupsResponse.json();
+                console.log('Groups:', groupsData);
                 
-                updateStats(globalStats);
-                updateChart(globalStats);
-                updateGroups(groups);
+                updateStats(globalData);
+                updateChart(globalData);
+                updateGroups(groupsData);
                 
                 document.getElementById('loading').style.display = 'none';
                 document.getElementById('statsGrid').style.display = 'grid';
@@ -220,9 +339,9 @@ DASHBOARD_HTML = """
             }
             
             groupsList.innerHTML = groups.map(group => `
-                <div class="group-item">
+                <div class="group-item" onclick="showGroupDetails(${group.id})">
                     <div>
-                        <div class="group-name">${group.name}</div>
+                        <div class="group-name">${group.name} →</div>
                         <div class="group-stats">👤 ${group.member_count} members • 👑 ${group.creator_name}</div>
                         <div class="group-stats" style="margin-top: 5px;">${group.description}</div>
                     </div>
