@@ -28,6 +28,8 @@ class GroupStats(BaseModel):
     total_answers: int
     active_users_today: int
     active_users_week: int
+    avg_answers_per_user: float
+    avg_questions_per_user: float
     
     class Config:
         from_attributes = True

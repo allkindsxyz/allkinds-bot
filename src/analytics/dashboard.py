@@ -187,11 +187,19 @@ DASHBOARD_HTML = """
                     <span class="detail-label">⚡ Active Today</span>
                     <span class="detail-value">${groupStats.active_users_today}</span>
                 </div>
-                <div class="detail-row">
-                    <span class="detail-label">📅 Active This Week</span>
-                    <span class="detail-value">${groupStats.active_users_week}</span>
-                </div>
-            `;
+                                 <div class="detail-row">
+                     <span class="detail-label">📅 Active This Week</span>
+                     <span class="detail-value">${groupStats.active_users_week}</span>
+                 </div>
+                 <div class="detail-row">
+                     <span class="detail-label">📊 Avg Answers per User</span>
+                     <span class="detail-value">${groupStats.avg_answers_per_user}</span>
+                 </div>
+                 <div class="detail-row">
+                     <span class="detail-label">📊 Avg Questions per User</span>
+                     <span class="detail-value">${groupStats.avg_questions_per_user}</span>
+                 </div>
+             `;
         }
         
         async function testAPI() {

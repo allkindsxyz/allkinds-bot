@@ -111,6 +111,63 @@ class AnalyticsService:
         active_week_result = await self.session.execute(active_week_query)
         active_users_week = active_week_result.scalar() or 0
         
+        # Count users with nickname and at least one answer with value
+        qualified_users_query = (
+            select(func.count(func.distinct(GroupMember.user_id)))
+            .join(Answer, GroupMember.user_id == Answer.user_id)
+            .join(Question, Answer.question_id == Question.id)
+            .where(
+                and_(
+                    GroupMember.group_id == group_id,
+                    GroupMember.nickname.isnot(None),
+                    Answer.value.isnot(None),
+                    Question.group_id == group_id
+                )
+            )
+        )
+        qualified_users_result = await self.session.execute(qualified_users_query)
+        qualified_users_count = qualified_users_result.scalar() or 0
+        
+        # Calculate avg answers per qualified user
+        if qualified_users_count > 0:
+            qualified_answers_query = (
+                select(func.count(Answer.id))
+                .join(GroupMember, Answer.user_id == GroupMember.user_id)
+                .join(Question, Answer.question_id == Question.id)
+                .where(
+                    and_(
+                        GroupMember.group_id == group_id,
+                        GroupMember.nickname.isnot(None),
+                        Answer.value.isnot(None),
+                        Question.group_id == group_id
+                    )
+                )
+            )
+            qualified_answers_result = await self.session.execute(qualified_answers_query)
+            qualified_answers_count = qualified_answers_result.scalar() or 0
+            avg_answers_per_user = round(qualified_answers_count / qualified_users_count, 2)
+        else:
+            avg_answers_per_user = 0.0
+        
+        # Calculate avg questions per qualified user
+        if qualified_users_count > 0:
+            qualified_questions_query = (
+                select(func.count(Question.id))
+                .join(GroupMember, Question.author_id == GroupMember.user_id)
+                .where(
+                    and_(
+                        Question.group_id == group_id,
+                        GroupMember.group_id == group_id,
+                        GroupMember.nickname.isnot(None)
+                    )
+                )
+            )
+            qualified_questions_result = await self.session.execute(qualified_questions_query)
+            qualified_questions_count = qualified_questions_result.scalar() or 0
+            avg_questions_per_user = round(qualified_questions_count / qualified_users_count, 2)
+        else:
+            avg_questions_per_user = 0.0
+        
         return GroupStats(
             id=group_row.id,
             name=group_row.name,
@@ -121,7 +178,9 @@ class AnalyticsService:
             total_questions=total_questions,
             total_answers=total_answers,
             active_users_today=active_users_today,
-            active_users_week=active_users_week
+            active_users_week=active_users_week,
+            avg_answers_per_user=avg_answers_per_user,
+            avg_questions_per_user=avg_questions_per_user
         )
     
     async def get_global_stats(self) -> GlobalStats:
