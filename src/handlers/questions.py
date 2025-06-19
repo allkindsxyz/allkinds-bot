@@ -1,5 +1,5 @@
-# Хендлеры для вопросов и ответов
-# Импорты и вызовы сервисов будут добавлены после выноса бизнес-логики 
+# Handlers for questions and answers
+# Imports and service calls will be added after extracting business logic 
 
 from aiogram import types, F, Router
 from aiogram.fsm.context import FSMContext
@@ -32,7 +32,7 @@ router = Router()
 
 @router.message(F.text & ~F.text.startswith('/'))
 async def handle_new_question(message: types.Message, state: FSMContext):
-    """Создание нового вопроса: сохраняем вопрос, начисляем баллы автору."""
+    """Create new question: save question, award points to author."""
     import asyncio
     text = message.text.strip()
     data = await state.get_data()
@@ -53,20 +53,20 @@ async def handle_new_question(message: types.Message, state: FSMContext):
         if not user or not user.current_group_id:
             await message.answer(get_message(QUESTION_MUST_JOIN_GROUP, user=user))
             return
-        # Проверка на дубликаты
+        # Check for duplicates
         is_dup = await is_duplicate_question(session, user.current_group_id, text)
         if is_dup:
             await message.answer(get_message(QUESTION_DUPLICATE, user=user))
             return
-        # Модерация
+        # Moderation
         ok, reason = await moderate_question(text)
         if not ok:
             await message.answer(reason or get_message(QUESTION_REJECTED, user=user))
             return
-        # Сохраняем вопрос
+        # Save question
         q = Question(group_id=user.current_group_id, author_id=user.id, text=text)
         session.add(q)
-        # Начисляем баллы автору
+        # Award points to author
         member = await session.execute(select(GroupMember).where(GroupMember.user_id == user.id, GroupMember.group_id == user.current_group_id))
         member = member.scalar()
         if member:
@@ -84,7 +84,7 @@ async def handle_new_question(message: types.Message, state: FSMContext):
             pass
         from src.handlers.questions import send_question_to_user
         await send_question_to_user(message.bot, user, q)
-    # Обновляем бейджи для других участников группы (не рассылаем вопросы)
+    # Update badges for other group members (don't send questions)
     async with AsyncSessionLocal() as session:
         group_members = await session.execute(select(GroupMember, User).join(User).where(GroupMember.group_id == user.current_group_id))
         group_members = group_members.all()
@@ -136,7 +136,7 @@ async def cb_answer_question(callback: types.CallbackQuery, state: FSMContext):
         ans = await session.execute(select(Answer).where(and_(Answer.question_id == qid, Answer.user_id == user.id)))
         ans = ans.scalar()
         if ans and ans.status == 'answered' and ans.value == value:
-            # Не меняем статус обратно на delivered, просто показываем сообщение
+            # Don't change status back to delivered, just show message
             await show_question_with_all_buttons(callback, question, user, creator_user_id)
             await callback.answer(get_message(QUESTION_CAN_CHANGE_ANSWER, user=user))
             return
@@ -154,7 +154,7 @@ async def cb_answer_question(callback: types.CallbackQuery, state: FSMContext):
         await show_question_with_selected_button(callback, question, user, value, creator_user_id)
         await callback.answer(get_message(QUESTION_ANSWER_SAVED, user=user))
         
-        # Показываем следующий неотвеченный вопрос из текущей группы
+        # Show next unanswered question from current group
         next_q_query = select(Answer, Question).join(Question, Answer.question_id == Question.id).where(
             Answer.user_id == user.id,
             Answer.status == 'delivered',
@@ -170,7 +170,7 @@ async def cb_answer_question(callback: types.CallbackQuery, state: FSMContext):
             next_ans, next_q = next_result
             await send_question_to_user(callback.bot, user, next_q, creator_user_id, question.group_id)
         
-        # Обновляем бейдж после ответа (всегда)
+        # Update badge after answer (always)
         await update_badge_after_answer(callback.bot, user, question.group_id)
 
 @router.callback_query(F.data.startswith("delete_question_"))
@@ -254,7 +254,7 @@ async def cb_load_answered_questions(callback: types.CallbackQuery, state: FSMCo
         total_count = await session.execute(total_count_query)
         total_count = len(total_count.scalars().all())
         print(f"[DEBUG] cb_load_answered_questions: total_count={total_count}, page=0, offset={ANSWERED_PAGE_SIZE}")
-        # Логируем id всех questions
+        # Log all questions
         questions_query = select(Question).where(Question.group_id == group_id, Question.is_deleted == 0)
         questions = await session.execute(questions_query)
         questions = questions.scalars().all()
@@ -318,19 +318,19 @@ async def cb_load_answered_questions_more(callback: types.CallbackQuery, state: 
         total_count = await session.execute(total_count_query)
         total_count = len(total_count.scalars().all())
         print(f"[DEBUG] cb_load_answered_questions_more: total_count={total_count}, page={page}, offset={offset}")
-        # Логируем id всех questions
+        # Log all questions
         questions_query = select(Question).where(Question.group_id == group_id, Question.is_deleted == 0)
         questions = await session.execute(questions_query)
         questions = questions.scalars().all()
         print(f"[DEBUG] cb_load_answered_questions_more: questions_ids={[q.id for q in questions]}")
         if total_count > offset:
-            # Если после этой страницы ещё останутся вопросы — показываем кнопку
+            # If there are more questions after this page — show button
             if offset + ANSWERED_PAGE_SIZE < total_count:
                 kb = get_load_more_keyboard(page+1, user)
                 print(f"[DEBUG] cb_load_answered_questions_more: sending load more button, reply_markup={kb}")
                 await callback.message.answer(get_message(QUESTION_MORE_ANSWERED, user=user), reply_markup=kb)
         else:
-            # Все вопросы загружены — удаляем кнопку
+            # All questions loaded — remove button
             try:
                 await callback.message.edit_reply_markup(reply_markup=None)
             except Exception as e:
@@ -362,12 +362,12 @@ async def cb_load_unanswered(callback: types.CallbackQuery, state: FSMContext):
                 pass
             await callback.answer()
             return
-        # Показываем первый неотвеченный delivered-вопрос
+        # Show first unanswered delivered-question
         question = await session.execute(select(Question).where(Question.id == unanswered[0].question_id))
         question = question.scalar()
         from src.handlers.questions import send_question_to_user
         await send_question_to_user(callback.bot, user, question)
-        # Если остались ещё — повторно показываем кнопку
+        # If there are more — show button again
         if len(unanswered) > 1:
             msg = get_message(UNANSWERED_QUESTIONS_MSG, user=user, count=len(unanswered)-1)
             kb = types.InlineKeyboardMarkup(inline_keyboard=[[types.InlineKeyboardButton(text=get_message(BTN_LOAD_UNANSWERED, user=user), callback_data="load_unanswered")]])
@@ -392,7 +392,7 @@ async def show_question_with_selected_button(callback, question, user, value, cr
     if is_author or is_creator:
         row.append(types.InlineKeyboardButton(text="Delete", callback_data=f"delete_question_{question.id}"))
     kb = types.InlineKeyboardMarkup(inline_keyboard=[row])
-    # Сравниваем текущую клавиатуру с новой
+    # Compare current keyboard with new
     current = callback.message.reply_markup
     if current and current.inline_keyboard == kb.inline_keyboard:
         return
@@ -414,7 +414,7 @@ async def show_question_with_all_buttons(callback, question, user, creator_user_
     if is_author or is_creator:
         keyboard.append([types.InlineKeyboardButton(text="Delete", callback_data=f"delete_question_{question.id}")])
     kb = types.InlineKeyboardMarkup(inline_keyboard=keyboard)
-    # Сравниваем текущую клавиатуру с новой
+    # Compare current keyboard with new
     current = callback.message.reply_markup
     if current and current.inline_keyboard == kb.inline_keyboard:
         return
@@ -442,7 +442,7 @@ async def send_question_to_user(bot, user, question, creator_user_id=None, group
         text = f"<b>{group_name}</b>: {question.text}"
     else:
         text = question.text
-    # --- Создаём Answer со статусом delivered, если нет ---
+    # --- Create Answer with status delivered, if not ---
     async with AsyncSessionLocal() as session:
         ans = await session.execute(select(Answer).where(and_(Answer.question_id == question.id, Answer.user_id == user.id)))
         ans = ans.scalar()
@@ -495,14 +495,14 @@ async def send_answered_question_to_user(bot, user, question, value, group_name=
 
 async def update_badge_for_new_question(bot, user, new_question):
     """
-    Обновляет бейдж при создании нового вопроса:
-    - Если у пользователя 0 неотвеченных → отправить push + показать вопрос + бейдж
-    - Если у пользователя >0 неотвеченных → только обновить бейдж (вопрос попадает в очередь)
+    Updates badge when creating new question:
+    - If user has 0 unanswered → send push + show question + badge
+    - If user has >0 unanswered → only update badge (question goes to queue)
     """
     from src.utils.redis import get_telegram_user_id
     
     async with AsyncSessionLocal() as session:
-        # Сначала считаем сколько было неотвеченных ДО добавления нового вопроса
+        # First count how many were unanswered BEFORE adding new question
         old_unanswered_count = await session.execute(
             select(Answer).where(
                 Answer.user_id == user.id,
@@ -513,14 +513,14 @@ async def update_badge_for_new_question(bot, user, new_question):
         )
         old_unanswered_count = len(old_unanswered_count.scalars().all())
         
-        # Создаем delivered Answer для нового вопроса
+        # Create delivered Answer for new question
         existing_ans = await session.execute(select(Answer).where(and_(Answer.question_id == new_question.id, Answer.user_id == user.id)))
         existing_ans = existing_ans.scalar()
         if not existing_ans:
             session.add(Answer(question_id=new_question.id, user_id=user.id, status='delivered'))
             await session.commit()
         
-        # Считаем количество неотвеченных вопросов в группе ПОСЛЕ добавления
+        # Count unanswered questions in group AFTER adding
         unanswered_count = await session.execute(
             select(Answer).where(
                 Answer.user_id == user.id,
@@ -536,17 +536,17 @@ async def update_badge_for_new_question(bot, user, new_question):
             return
         
         if old_unanswered_count == 0:
-            # У пользователя не было неотвеченных вопросов - показываем новый вопрос сразу
+            # User had no unanswered questions - show new question immediately
             try:
                 await send_question_to_user(bot, user, new_question)
                 logging.info(f"[update_badge_for_new_question] Sent new question to user {user.id} (was 0 unanswered)")
             except Exception as e:
                 logging.error(f"[update_badge_for_new_question] Failed to send question: {e}")
         else:
-            # У пользователя уже были неотвеченные - новый вопрос попадает в очередь
+            # User already had unanswered - new question goes to queue
             logging.info(f"[update_badge_for_new_question] Question added to queue for user {user.id} (had {old_unanswered_count} unanswered)")
         
-        # Обновляем бейдж (пока только логирование)
+        # Update badge (logging only for now)
         try:
             # badge_text = f"🔔 You have {unanswered_count} unanswered questions"
             # await bot.send_message(telegram_user_id, badge_text)
@@ -556,15 +556,15 @@ async def update_badge_for_new_question(bot, user, new_question):
 
 async def update_badge_after_answer(bot, user, group_id):
     """
-    Обновляет бейдж после ответа на вопрос:
-    - Считает оставшиеся неотвеченные вопросы
-    - Если стало 0 → убирает бейдж
-    - Если >0 → обновляет бейдж с новым количеством
+    Updates badge after answering a question:
+    - Counts remaining unanswered questions
+    - If becomes 0 → removes badge
+    - If >0 → updates badge with new count
     """
     from src.utils.redis import get_telegram_user_id
     
     async with AsyncSessionLocal() as session:
-        # Считаем количество оставшихся неотвеченных вопросов в группе
+        # Count remaining unanswered questions in group
         unanswered_count = await session.execute(
             select(Answer).where(
                 Answer.user_id == user.id,
@@ -581,12 +581,12 @@ async def update_badge_after_answer(bot, user, group_id):
         
         try:
             if unanswered_count == 0:
-                # Убираем бейдж - больше нет неотвеченных вопросов
+                # Remove badge - no more unanswered questions
                 # badge_text = "✅ All questions answered!"
                 # await bot.send_message(telegram_user_id, badge_text)
                 logging.info(f"[update_badge_after_answer] Removed badge for user {user.id}: no more unanswered questions")
             else:
-                # Обновляем бейдж с новым количеством
+                # Update badge with new count
                 # badge_text = f"🔔 You have {unanswered_count} unanswered questions"
                 # await bot.send_message(telegram_user_id, badge_text)
                 logging.info(f"[update_badge_after_answer] Updated badge for user {user.id}: {unanswered_count} unanswered")

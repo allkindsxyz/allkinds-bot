@@ -1,4 +1,4 @@
-# Генерация клавиатур для групп 
+# Generate keyboards for groups 
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup, KeyboardButton
 from src.constants import POINTS_FOR_MATCH
 from src.texts.messages import get_message, BTN_CREATE_GROUP, BTN_JOIN_GROUP, BTN_SWITCH_TO, BTN_DELETE_GROUP, BTN_LEAVE_GROUP, BTN_DELETE, BTN_CANCEL, BTN_SEND_LOCATION, BTN_WHO_IS_VIBING
@@ -26,7 +26,7 @@ def get_group_main_keyboard(user_id, group_id, group_name, is_creator, user):
         rows.append([InlineKeyboardButton(text=get_message(BTN_DELETE_GROUP, user=user, group_name=group_name), callback_data=f"confirm_delete_group_{group_id}")])
     else:
         rows.append([InlineKeyboardButton(text=get_message(BTN_LEAVE_GROUP, user=user, group_name=group_name), callback_data=f"confirm_leave_group_{group_id}")])
-    # Кнопка мэтча убрана из inline-клавиатуры
+    # Match button removed from inline keyboard
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 def get_confirm_delete_keyboard(group_id, user):

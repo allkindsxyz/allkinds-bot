@@ -3,8 +3,8 @@ import logging
 from src.db import AsyncSessionLocal
 from sqlalchemy import select, and_, text
 from src.models import Group, GroupMember, User, Answer, Question, MatchStatus, Match
-# Хендлеры для управления группами
-# Импорты и вызовы сервисов будут добавлены после выноса бизнес-логики 
+# Handlers for group management
+# Imports and service calls will be added after extracting business logic 
 
 from aiogram import types, F, Router
 from aiogram.fsm.context import FSMContext
@@ -102,7 +102,7 @@ async def join_group_by_code(user_id: int, code: str):
 
 async def show_group_main_flow(message, user_id, group_id):
     """
-    После welcome: показывает кнопку истории, счётчик неотвеченных и первый неотвеченный вопрос.
+    After welcome: shows history button, unanswered counter and first unanswered question.
     """
     from src.services.questions import get_next_unanswered_question
     from src.handlers.questions import send_question_to_user
@@ -113,7 +113,7 @@ async def show_group_main_flow(message, user_id, group_id):
     async with AsyncSessionLocal() as session:
         user = await session.execute(select(User).where(User.id == user_id))
         user = user.scalar()
-        # --- ДОБАВЛЕНО: создаём delivered-Answer для всех новых вопросов ---
+        # --- ADDED: create delivered-Answer for all new questions ---
         questions = await session.execute(select(Question).where(Question.group_id == group_id, Question.is_deleted == 0))
         questions = questions.scalars().all()
         for question in questions:
@@ -123,7 +123,7 @@ async def show_group_main_flow(message, user_id, group_id):
                 session.add(Answer(question_id=question.id, user_id=user.id, status='delivered'))
         await session.commit()
         
-        # Считаем количество ответов для кнопки истории
+        # Count answers for history button
         answers_count = await session.execute(
             select(Answer).where(
                 Answer.user_id == user.id,
@@ -133,7 +133,7 @@ async def show_group_main_flow(message, user_id, group_id):
         )
         answers_count = len(answers_count.scalars().all())
         
-        # Получаем все неотвеченные вопросы
+        # Get all unanswered questions
         unanswered = await session.execute(
             select(Answer, Question).join(Question, Answer.question_id == Question.id)
             .where(
@@ -147,17 +147,17 @@ async def show_group_main_flow(message, user_id, group_id):
         )
         unanswered = unanswered.all()
         
-        # 2. Кнопка загрузки отвеченных вопросов (если есть что загружать)
+        # 2. Load answered questions button (if there's something to load)
         if answers_count > 0:
             kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text=get_message(QUESTION_LOAD_ANSWERED, user=user), callback_data="load_answered_questions")]])
             await message.answer(get_message(GROUPS_REVIEW_ANSWERED, user=user), reply_markup=kb)
         
-        # 3. Счётчик неотвеченных вопросов с правильным форматированием
+        # 3. Unanswered questions counter with proper formatting
         if unanswered:
             count = len(unanswered)
             await message.answer(get_message("UNANSWERED_QUESTIONS_MSG", user=user, count=count), parse_mode="HTML")
             
-            # 4. Первый неотвеченный вопрос показывается сразу
+            # 4. First unanswered question is shown immediately
             ans, question = unanswered[0]
             if ans.status == 'delivered' and ans.value is None:
                 await send_question_to_user(message.bot, user, question)
@@ -166,7 +166,7 @@ async def show_group_main_flow(message, user_id, group_id):
 
 async def show_group_welcome_and_question(message, user_id, group_id):
     """
-    Welcome-сообщение при входе в группу: показывает приветствие, баланс, кнопку мэтча (ReplyKeyboard), затем историю/вопросы.
+    Welcome message when entering group: shows greeting, balance, match button (ReplyKeyboard), then history/questions.
     """
     from src.keyboards.groups import get_group_reply_keyboard
     from src.services.groups import get_group_balance, get_user_groups
@@ -180,7 +180,7 @@ async def show_group_welcome_and_question(message, user_id, group_id):
         group = next((g for g in groups if g["id"] == group_id), None)
         group_name = group["name"] if group else "this group"
         balance = await get_group_balance(user_id, group_id)
-    # Welcome + кнопка мэтча
+    # Welcome + match button
     from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
     match_kb = ReplyKeyboardMarkup(
         keyboard=[[KeyboardButton(text=get_message(BTN_WHO_IS_VIBING, user=user, points=POINTS_FOR_MATCH))]],
@@ -247,7 +247,7 @@ async def show_user_groups(message, state, is_admin=False):
         types.InlineKeyboardButton(text=get_message(BTN_JOIN_GROUP, user=user), callback_data="join_another_group_with_code")
     ])
     sent = await message.answer(text, reply_markup=kb, parse_mode="HTML")
-    # --- Новая логика для кнопки истории ---
+    # --- New logic for history button ---
     async with AsyncSessionLocal() as session:
         any_answers = await session.execute(
             select(Answer).where(
@@ -356,15 +356,15 @@ async def cb_delete_group_yes(callback: types.CallbackQuery, state: FSMContext):
         await callback.message.answer(get_message("Please start the bot to use this feature.", user=callback.from_user))
         await callback.answer()
         return
-    # Удаляем группу через сервис
+    # Delete group via service
     result = await delete_group_service(group_id)
     if result["ok"]:
-        await callback.message.answer(get_message("Группа успешно удалена.", user=user))
+        await callback.message.answer(get_message("Group successfully deleted.", user=user))
         await clear_mygroups_messages(callback.message, state)
         await state.clear()
         await state.update_data(internal_user_id=user_id)
     else:
-        await callback.message.answer(get_message("Ошибка при удалении группы.", user=user))
+        await callback.message.answer(get_message("Error deleting group.", user=user))
     await callback.answer()
 
 # --- Group-related handlers ---
@@ -440,7 +440,7 @@ async def cb_switch_to_group(callback: types.CallbackQuery, state: FSMContext):
     result = await switch_group_service(user_id, group_id)
     if result["ok"]:
         await callback.message.delete()
-        # Показываем welcome/историю/мэтч-кнопку для выбранной группы
+        # Show welcome/history/match-button for selected group
         await show_group_welcome_and_question(callback.message, user_id, group_id)
         await callback.answer()
     else:
@@ -511,7 +511,7 @@ async def cb_find_match(callback: types.CallbackQuery, state: FSMContext):
         if not user:
             await callback.answer(get_message(MATCH_NO_VALID, user=callback.from_user, show_alert=True))
             return
-        # Считаем количество ответов пользователя в группе
+        # Count user's answers in group
         answers_count = await session.execute(
             select(Answer).where(
                 Answer.user_id == user.id,
@@ -530,7 +530,7 @@ async def cb_find_match(callback: types.CallbackQuery, state: FSMContext):
         if answers_count < MIN_ANSWERS_FOR_MATCH:
             await callback.message.answer(get_message(f"You need to answer at least {MIN_ANSWERS_FOR_MATCH} questions to get a match. You have answered: {answers_count}. Keep answering or create new questions!", user=user))
             return
-        # Поиск мэтча
+        # Find match
         match = await find_best_match(user_id, group_id)
         if match and match.get('not_enough_common'):
             await callback.message.answer(get_message("В группе есть другие участники, но у вас пока нет 3+ общих отвеченных вопросов. Ответьте на большее количество вопросов!", user=user))
@@ -540,10 +540,10 @@ async def cb_find_match(callback: types.CallbackQuery, state: FSMContext):
             await callback.message.answer(get_message(MATCH_NO_OTHERS, user=user))
             await callback.answer(get_message(MATCH_NO_VALID, user=callback.from_user, show_alert=True))
             return
-        # Списываем баллы
+        # Deduct points
         member.balance -= POINTS_FOR_MATCH
         await session.commit()
-        # Показываем UX мэтча
+        # Show match UX
         text = get_message(MATCH_FOUND, user=user, nickname=match['nickname'], similarity=match['similarity'], common_questions=match['common_questions'], valid_users_count=match['valid_users_count'])
         kb = types.InlineKeyboardMarkup(inline_keyboard=[
             [types.InlineKeyboardButton(text=get_message(MATCH_AI_CHEMISTRY, user=user, points=POINTS_TO_CONNECT), callback_data=f"match_chat_{match['user_id']}")],
@@ -567,19 +567,19 @@ async def cb_match_hide(callback: types.CallbackQuery, state: FSMContext):
         return
     data = callback.data.split("_")
     match_user_id = int(data[-1])
-    # Получаем group_id из текущей группы пользователя
+    # Get group_id from user's current group
     async with AsyncSessionLocal() as session:
         user = await session.execute(select(User).where(User.id == user_id))
         user = user.scalar()
         group_id = user.current_group_id if user else None
     if group_id:
         await set_match_status(user_id, group_id, match_user_id, "hidden")
-        # Удаляем сообщения мэтча (фото/текст)
+        # Delete match messages (photo/text)
         try:
             await callback.message.delete()
         except Exception:
             pass
-        # Отправляем уведомление и удаляем его через 5 секунд
+        # Send notification and delete it after 5 seconds
         notif = await callback.message.answer(get_message("This user will no longer be shown to you.", user=callback.from_user))
         await asyncio.sleep(5)
         try:
@@ -599,19 +599,19 @@ async def cb_match_postpone(callback: types.CallbackQuery, state: FSMContext):
         return
     data = callback.data.split("_")
     match_user_id = int(data[-1])
-    # Получаем group_id из текущей группы пользователя
+    # Get group_id from user's current group
     async with AsyncSessionLocal() as session:
         user = await session.execute(select(User).where(User.id == user_id))
         user = user.scalar()
         group_id = user.current_group_id if user else None
         if group_id:
-            # Удаляем статус postponed/hidden для этого мэтча (возвращаем в пул)
+            # Remove postponed/hidden status for this match (return to pool)
             await session.execute(
                 text("DELETE FROM match_statuses WHERE user_id = :user_id AND group_id = :group_id AND match_user_id = :match_user_id"),
                 {"user_id": user.id, "group_id": group_id, "match_user_id": match_user_id}
             )
             await session.commit()
-    # Удаляем только два последних сообщения (мэтч и кнопка)
+    # Delete only two last messages (match and button)
     for offset in range(0, 2):
         try:
             await callback.bot.delete_message(callback.message.chat.id, callback.message.message_id - offset)
@@ -674,7 +674,7 @@ async def cb_match_chat(callback: types.CallbackQuery, state: FSMContext):
         match_member = await session.execute(select(GroupMember).where(GroupMember.user_id == match_user_id, GroupMember.group_id == group_id))
         match_member = match_member.scalar()
         
-        # Проверяем, есть ли уже запрос
+        # Check if request already exists
         existing_request = await session.execute(select(MatchStatus).where(
             MatchStatus.user_id == user.id,
             MatchStatus.group_id == group_id,
@@ -682,7 +682,7 @@ async def cb_match_chat(callback: types.CallbackQuery, state: FSMContext):
         ))
         existing_request = existing_request.scalar()
         
-        # Создаем статус "ожидание подтверждения" для инициатора
+        # Create "pending approval" status for initiator
         if existing_request:
             existing_request.status = "pending_approval"
         else:
@@ -690,13 +690,13 @@ async def cb_match_chat(callback: types.CallbackQuery, state: FSMContext):
             session.add(new_request)
         await session.commit()
     
-    # Удаляем карточку матча
+    # Delete match card
     try:
         await callback.message.delete()
     except Exception:
         pass
     
-    # Удаляем сообщение "vibing"
+    # Delete "vibing" message
     data = await state.get_data()
     vibing_msg_id = data.get("vibing_msg_id")
     if vibing_msg_id:
@@ -706,34 +706,34 @@ async def cb_match_chat(callback: types.CallbackQuery, state: FSMContext):
             pass
         await state.update_data(vibing_msg_id=None)
     
-    # Уведомляем инициатора о том, что запрос отправлен
+    # Notify initiator that request was sent
     notif = await callback.message.answer(
         get_message(MATCH_REQUEST_SENT, user=user, nickname=match_member.nickname if match_member else "Unknown")
     )
     
-    # Отправляем уведомление второму пользователю
+    # Send notification to second user
     match_telegram_user_id = await get_telegram_user_id(match_user.id)
     if match_telegram_user_id:
-        # Получаем данные для отображения матча
+        # Get data for match display
         reverse_match = await find_best_match(match_user_id, group_id, exclude_user_ids=[])
         if reverse_match and reverse_match.get('user_id') == user.id:
             similarity = reverse_match['similarity']
             common_questions = reverse_match['common_questions']
             valid_users_count = reverse_match['valid_users_count']
         else:
-            # Если не удалось получить обратный мэтч, используем базовые данные
+            # If couldn't get reverse match, use basic data
             similarity = 85  # fallback
             common_questions = 3  # fallback
             valid_users_count = 2  # fallback
         
-        # Сначала сообщение о запросе на подключение
+        # First message about connection request
         request_text = get_message(MATCH_INCOMING_REQUEST, user=match_user, nickname=member.nickname if member else "Unknown")
         
-        # Затем карточка матча
+        # Then match card
         match_text = get_message(MATCH_FOUND, user=match_user, nickname=member.nickname if member else "Unknown", 
                                similarity=similarity, common_questions=common_questions, valid_users_count=valid_users_count)
         
-        # Кнопки для принятия/отклонения/блокировки
+        # Buttons for accept/decline/block
         kb = types.InlineKeyboardMarkup(inline_keyboard=[
             [
                 types.InlineKeyboardButton(text=get_message(BTN_ACCEPT_MATCH, user=match_user), 
@@ -748,10 +748,10 @@ async def cb_match_chat(callback: types.CallbackQuery, state: FSMContext):
         ])
         
         try:
-            # Отправляем сообщение о запросе
+            # Send notification to second user
             await callback.bot.send_message(match_telegram_user_id, request_text, parse_mode="HTML")
             
-            # Отправляем карточку матча с фото и кнопками
+            # Send match card with photo and buttons
             if member and member.photo_url:
                 await callback.bot.send_photo(match_telegram_user_id, member.photo_url, 
                                             caption=match_text, reply_markup=kb, parse_mode="HTML")
@@ -795,10 +795,7 @@ async def cb_accept_match(callback: types.CallbackQuery, state: FSMContext):
         member = await session.execute(select(GroupMember).where(GroupMember.user_id == user.id, GroupMember.group_id == group_id))
         member = member.scalar()
         
-        initiator_member = await session.execute(select(GroupMember).where(GroupMember.user_id == initiator_user_id, GroupMember.group_id == group_id))
-        initiator_member = initiator_member.scalar()
-        
-        # Обновляем статус на "принят"
+        # Update status to "accepted"
         match_status = await session.execute(select(MatchStatus).where(
             MatchStatus.user_id == initiator_user_id,
             MatchStatus.group_id == group_id,
@@ -810,7 +807,7 @@ async def cb_accept_match(callback: types.CallbackQuery, state: FSMContext):
         if match_status:
             match_status.status = "accepted"
         
-        # Создаем Match запись
+        # Create Match record
         user1_id = min(user.id, initiator.id)
         user2_id = max(user.id, initiator.id)
         
@@ -829,24 +826,24 @@ async def cb_accept_match(callback: types.CallbackQuery, state: FSMContext):
         
         await session.commit()
     
-    # Удаляем сообщения с запросом
+    # Delete request messages
     try:
         await callback.message.delete()
-        # Попытка удалить предыдущее сообщение (текст запроса)
+        # Try to delete previous message (request text)
         await callback.bot.delete_message(callback.message.chat.id, callback.message.message_id - 1)
     except Exception:
         pass
     
-    # Получаем telegram_user_id для создания чат-ссылки
+    # Get telegram_user_id for chat link creation
     user_telegram_id = await get_telegram_user_id(user.id)
     initiator_telegram_id = await get_telegram_user_id(initiator.id)
     
     if user_telegram_id and initiator_telegram_id:
-        # Формируем ссылку для чата
+        # Form chat link
         param = quote(f"match_{user_telegram_id}_{initiator_telegram_id}")
         link = f"https://t.me/{ALLKINDS_CHAT_BOT_USERNAME}?start={param}"
         
-        # Отправляем кнопку для перехода в чат принимающему пользователю
+        # Send go-to-chat button to accepting user
         kb = types.InlineKeyboardMarkup(inline_keyboard=[
             [types.InlineKeyboardButton(text=get_message(BTN_GO_TO_CHAT, user=user), url=link)]
         ])
@@ -856,7 +853,7 @@ async def cb_accept_match(callback: types.CallbackQuery, state: FSMContext):
             reply_markup=kb
         )
         
-        # Уведомляем инициатора о принятии
+        # Notify initiator about acceptance
         if initiator_telegram_id:
             param_initiator = quote(f"match_{initiator_telegram_id}_{user_telegram_id}")
             link_initiator = f"https://t.me/{ALLKINDS_CHAT_BOT_USERNAME}?start={param_initiator}"
@@ -904,7 +901,7 @@ async def cb_reject_match(callback: types.CallbackQuery, state: FSMContext):
         member = await session.execute(select(GroupMember).where(GroupMember.user_id == user.id, GroupMember.group_id == group_id))
         member = member.scalar()
         
-        # Обновляем статус на "отклонен"
+        # Update status to "rejected"
         match_status = await session.execute(select(MatchStatus).where(
             MatchStatus.user_id == initiator_user_id,
             MatchStatus.group_id == group_id,
@@ -917,15 +914,15 @@ async def cb_reject_match(callback: types.CallbackQuery, state: FSMContext):
             match_status.status = "rejected"
         await session.commit()
     
-    # Удаляем сообщения с запросом
+    # Delete request messages
     try:
         await callback.message.delete()
-        # Попытка удалить предыдущее сообщение (текст запроса)
+        # Try to delete previous message (request text)
         await callback.bot.delete_message(callback.message.chat.id, callback.message.message_id - 1)
     except Exception:
         pass
     
-    # Уведомляем инициатора об отклонении
+    # Notify initiator about rejection
     initiator_telegram_id = await get_telegram_user_id(initiator.id)
     if initiator_telegram_id:
         try:
@@ -966,7 +963,7 @@ async def cb_block_match(callback: types.CallbackQuery, state: FSMContext):
         member = await session.execute(select(GroupMember).where(GroupMember.user_id == user.id, GroupMember.group_id == group_id))
         member = member.scalar()
         
-        # Устанавливаем статус "заблокирован" для запроса
+        # Set status to "blocked" for request
         match_status = await session.execute(select(MatchStatus).where(
             MatchStatus.user_id == initiator_user_id,
             MatchStatus.group_id == group_id,
@@ -978,7 +975,7 @@ async def cb_block_match(callback: types.CallbackQuery, state: FSMContext):
         if match_status:
             match_status.status = "blocked"
         
-        # Создаем обратную запись для блокировки (чтобы исключить этого пользователя из будущих матчей)
+        # Create reverse record for blocking (to exclude this user from future matches)
         reverse_status = await session.execute(select(MatchStatus).where(
             MatchStatus.user_id == user.id,
             MatchStatus.group_id == group_id,
@@ -995,15 +992,15 @@ async def cb_block_match(callback: types.CallbackQuery, state: FSMContext):
         
         await session.commit()
     
-    # Удаляем сообщения с запросом
+    # Delete request messages
     try:
         await callback.message.delete()
-        # Попытка удалить предыдущее сообщение (текст запроса)
+        # Try to delete previous message (request text)
         await callback.bot.delete_message(callback.message.chat.id, callback.message.message_id - 1)
     except Exception:
         pass
     
-    # Уведомляем инициатора о блокировке
+    # Notify initiator about blocking
     initiator_telegram_id = await get_telegram_user_id(initiator.id)
     if initiator_telegram_id:
         try:
@@ -1020,17 +1017,17 @@ async def cb_block_match(callback: types.CallbackQuery, state: FSMContext):
 @router.callback_query(F.data.startswith("go_to_chat_"))
 async def cb_go_to_chat(callback: types.CallbackQuery, state: FSMContext):
     """Обработчик нажатия на кнопку 'Go to Allkinds Chat Bot' - удаляет уведомление и перенаправляет в чат-бот."""
-    # Извлекаем параметр для ссылки
+    # Extract parameter for link
     param = callback.data.replace("go_to_chat_", "")
     link = f"https://t.me/{ALLKINDS_CHAT_BOT_USERNAME}?start={param}"
     
-    # Удаляем сообщение с уведомлением
+    # Delete notification message
     try:
         await callback.message.delete()
     except Exception:
         pass
     
-    # Отправляем новое сообщение с URL-кнопкой
+    # Send new message with URL button
     kb = types.InlineKeyboardMarkup(inline_keyboard=[
         [types.InlineKeyboardButton(text="🚀 Open Allkinds Chat Bot", url=link)]
     ])
@@ -1053,4 +1050,4 @@ async def switch_group_service(user_id: int, group_id: int) -> dict:
         group = group.scalar()
         return {"ok": True, "group": {"id": group.id, "name": group.name}}
 
-# TODO: Перенести сюда все group-related хендлеры (create, join, switch, delete, leave, confirm/cancel) 
+# TODO: Move all group-related handlers here (create, join, switch, delete, leave, confirm/cancel) 

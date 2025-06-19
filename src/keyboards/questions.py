@@ -1,4 +1,4 @@
-# Генерация клавиатур для вопросов и ответов 
+# Generate keyboards for questions and answers 
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 from src.texts.messages import QUESTION_DELETE, QUESTION_LOAD_MORE
 

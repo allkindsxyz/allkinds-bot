@@ -50,17 +50,17 @@ async def instructions(message: types.Message, state: FSMContext):
             user = user.scalar()
         msg = await message.answer(get_message(INSTRUCTIONS_TEXT, user or message.from_user), parse_mode="HTML")
         await state.update_data(instructions_msg_id=msg.message_id)
-        # --- Проверка версии ---
+        # --- Version check ---
         user_data = await state.get_data()
         user_version = user_data.get('bot_version')
         current_version = await redis.get('bot_version')
         if user_version and current_version and user_version != current_version:
-            await message.answer("Вышла новая версия бота. Пожалуйста, нажмите /start для обновления.")
+            await message.answer("A new version of the bot has been released. Please click /start to update.")
             await state.clear()
             await state.update_data(bot_version=current_version)
             return
     except Exception as e:
-        logging.exception(f"Ошибка в хендлере /instructions: {e}")
+        logging.exception(f"Error in /instructions handler: {e}")
 
 @router.message(Command("mygroups"))
 async def my_groups(message: types.Message, state: FSMContext):
@@ -68,7 +68,7 @@ async def my_groups(message: types.Message, state: FSMContext):
     try:
         print('/mygroups handler triggered')
         await hide_instructions_and_mygroups_by_message(message, state)
-        # Получаем user из БД для актуального языка
+        # Get user from DB for current language
         data = await state.get_data()
         user_id = data.get('internal_user_id')
         async with AsyncSessionLocal() as session:
@@ -81,7 +81,7 @@ async def my_groups(message: types.Message, state: FSMContext):
         from src.handlers.groups import show_user_groups
         await show_user_groups(message, state, is_admin=is_admin)
     except Exception as e:
-        logging.exception(f"Ошибка в хендлере /mygroups: {e}")
+        logging.exception(f"Error in /mygroups handler: {e}")
 
 def normalize_lang(lang_code):
     if not lang_code:
@@ -96,24 +96,24 @@ async def start(message: types.Message, state: FSMContext):
     try:
         print('/start handler triggered')
         from src.services.groups import ensure_admin_in_db, join_group_by_code_service
-        await ensure_admin_in_db()  # Гарантируем, что супер-админ есть в GroupCreator
+        await ensure_admin_in_db()  # Ensure super-admin exists in GroupCreator
         await hide_instructions_and_mygroups_by_message(message, state)
         telegram_user_id = message.from_user.id
-        # --- Получаем internal_user_id централизованно ---
+        # --- Get internal_user_id centrally ---
         internal_user_id = await get_or_restore_internal_user_id(state, telegram_user_id)
         await state.update_data(internal_user_id=internal_user_id)
-        # --- Проверка версии ---
+        # --- Version check ---
         user_data = await state.get_data()
         user_version = user_data.get('bot_version')
         current_version = await redis.get('bot_version')
         if user_version and current_version and user_version != current_version:
-            await message.answer("Вышла новая версия бота. Пожалуйста, нажмите /start для обновления.")
+            await message.answer("A new version of the bot has been released. Please click /start to update.")
             await state.clear()
             await state.update_data(bot_version=current_version)
             return
-        # После успешного старта обновляем версию в state
+        # After successful start, update version in state
         await state.update_data(bot_version=current_version)
-        # --- Исправленный парсинг аргумента диплинка ---
+        # --- Fixed deeplink argument parsing ---
         args = None
         if message.text:
             parts = message.text.strip().split(maxsplit=1)
@@ -152,7 +152,7 @@ async def start(message: types.Message, state: FSMContext):
                 kb = get_user_keyboard(user)
             await message.answer(get_message(GROUPS_WELCOME_ADMIN if is_admin else GROUPS_WELCOME, user), reply_markup=kb)
             return
-        # Если есть хотя бы одна группа — всегда показываем welcome и список кнопок Switch to ...
+        # If there's at least one group — always show welcome and list of Switch to ... buttons
         from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
         kb = InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text=get_message(BTN_SWITCH_TO, user=user, group_name=g['name']), callback_data=f"switch_to_group_{g['id']}")] for g in groups
@@ -164,7 +164,7 @@ async def start(message: types.Message, state: FSMContext):
         await message.answer(get_message(GROUPS_SELECT, user), reply_markup=kb)
         return
     except Exception as e:
-        logging.exception("Ошибка в хендлере /start")
+        logging.exception("Error in /start handler")
         raise
 
 @router.message(Command("language"))
@@ -188,11 +188,11 @@ async def set_language(callback: types.CallbackQuery, state: FSMContext):
         if user:
             user.language = lang
             await session.commit()
-    # Повторно получаем user с обновлённым языком
+    # Re-get user with updated language
     async with AsyncSessionLocal() as session:
         user = await session.execute(select(User).where(User.id == callback.from_user.id))
         user = user.scalar()
-    # Подтверждение на выбранном языке
+    # Confirmation in selected language
     await callback.message.answer(get_message("INSTRUCTIONS_TEXT", user), parse_mode="HTML")
     from src.handlers.groups import show_user_groups
     await show_user_groups(callback.message, state)
@@ -264,7 +264,7 @@ async def extend_token_callback(callback: types.CallbackQuery, state: FSMContext
     from src.utils.redis import update_ttl
     telegram_user_id = callback.from_user.id
     await update_ttl(telegram_user_id)
-    # Получаем user для локализации
+    # Get user for localization
     async with AsyncSessionLocal() as session:
         data = await state.get_data()
         user_id = data.get('internal_user_id')

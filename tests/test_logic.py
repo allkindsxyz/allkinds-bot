@@ -26,7 +26,7 @@ async def create_group(session, creator_user, name, description):
     group = Group(name=name, description=description, invite_code=code, creator_user_id=creator_user.id)
     session.add(group)
     await session.flush()
-    # Автодобавление админа в участники
+    # Auto-add admin to members
     member = GroupMember(user_id=creator_user.id, group_id=group.id)
     session.add(member)
     await session.flush()
@@ -57,7 +57,7 @@ async def test_join_group_by_code(async_session):
     async_session.add(GroupCreator(user_id=admin.id))
     group, code = await create_group(async_session, admin, "G2", "Desc2")
     user = await create_user(async_session, 333)
-    # Присоединение пользователя
+    # User joins group
     member = GroupMember(user_id=user.id, group_id=group.id)
     async_session.add(member)
     await async_session.commit()
@@ -72,7 +72,7 @@ async def test_onboarding_profile(async_session):
     member = GroupMember(user_id=user.id, group_id=group.id)
     async_session.add(member)
     await async_session.flush()
-    # Онбординг
+    # Onboarding
     member.nickname = "Nick"
     member.photo_url = "photo_id"
     member.city = "Moscow"
@@ -96,15 +96,15 @@ async def test_admin_sees_own_groups(async_session):
 
 async def test_non_admin_cannot_create_group(async_session):
     user = await create_user(async_session, 666)
-    # Не добавляем в GroupCreator
-    # Пытаемся создать группу
+    # Don't add to GroupCreator
+    # Try to create group
     code = random_code()
     group = Group(name="G6", description="D6", invite_code=code, creator_user_id=user.id)
     async_session.add(group)
     try:
         await async_session.flush()
-        # Проверяем, что группа не должна быть создана (логика должна быть в бизнес-слое, не в модели)
-        # Здесь просто проверяем, что flush не падает, но в реальном коде должна быть проверка прав
+        # Check that group shouldn't be created (logic should be in business layer, not in model)
+        # Here just check that flush doesn't crash, but in real code there should be permission check
         assert True
     except Exception:
         assert False
@@ -112,17 +112,17 @@ async def test_non_admin_cannot_create_group(async_session):
 async def test_leave_last_group_removes_membership_and_current(async_session):
     user = await create_user(async_session, 777)
     group, code = await create_group(async_session, user, "LastGroup", "DescLast")
-    # Проверяем, что пользователь в группе
+    # Check that user is in group
     member = await async_session.execute(select(GroupMember).where(GroupMember.user_id == user.id, GroupMember.group_id == group.id))
     assert member.scalar() is not None
-    # Удаляем пользователя из группы (эмулируем leave)
+    # Remove user from group (emulate leave)
     await async_session.execute(GroupMember.__table__.delete().where(GroupMember.user_id == user.id, GroupMember.group_id == group.id))
     user.current_group_id = None
     await async_session.commit()
-    # Проверяем, что пользователь не состоит ни в одной группе
+    # Check that user is not in any group
     members = await async_session.execute(select(GroupMember).where(GroupMember.user_id == user.id))
     assert members.scalars().all() == []
-    # Проверяем, что current_group_id сброшен
+    # Check that current_group_id is reset
     updated_user = await async_session.execute(select(User).where(User.id == user.id))
     updated_user = updated_user.scalar()
     assert updated_user.current_group_id is None

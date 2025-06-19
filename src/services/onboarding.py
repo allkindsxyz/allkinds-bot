@@ -5,7 +5,7 @@ from typing import Optional
 
 async def save_nickname_service(user_id: int, group_id: int, nickname: str) -> None:
     async with AsyncSessionLocal() as session:
-        # Гарантируем, что пользователь существует
+        # Ensure user exists
         user = await session.execute(select(User).where(User.id == user_id))
         user = user.scalar()
         if not user:

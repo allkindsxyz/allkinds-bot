@@ -9,11 +9,11 @@ class User(Base):
     id = Column(Integer, primary_key=True, unique=True, nullable=False)
     current_group_id = Column(Integer, ForeignKey('groups.id'), nullable=True)
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
-    language = Column(String(8), default='en')  # Язык пользователя для мультиязычности
+    language = Column(String(8), default='en')  # User language for multilingual support
     
     memberships = relationship('GroupMember', back_populates='user')
     created_groups = relationship('Group', back_populates='creator', foreign_keys='Group.creator_user_id')
-    # current_group = relationship('Group', foreign_keys=[current_group_id])  # если потребуется
+    # current_group = relationship('Group', foreign_keys=[current_group_id])  # if needed
 
     # Runtime-only field (not persisted in DB)
     def __init__(self, *args, telegram_user_id=None, **kwargs):
@@ -64,7 +64,7 @@ class Question(Base):
     group_id = Column(Integer, ForeignKey('groups.id', ondelete='CASCADE'), nullable=False, index=True)
     author_id = Column(Integer, ForeignKey('users.id', ondelete='CASCADE'), nullable=False)
     text = Column(Text, nullable=False)
-    embedding = Column(String, nullable=True)  # для future AI
+    embedding = Column(String, nullable=True)  # for future AI
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
     is_deleted = Column(Integer, default=0)  # soft delete
 

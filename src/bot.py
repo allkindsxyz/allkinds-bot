@@ -9,7 +9,7 @@ from src.routers import all_routers
 from src.services.groups import ensure_admin_in_db
 from aiogram import types
 
-# Регистрация всех роутеров
+# Register all routers
 for router in all_routers:
     dp.include_router(router)
 
@@ -21,7 +21,7 @@ async def on_startup(app):
     print(f"[INFO] Setting webhook: {WEBHOOK_URL}")
     await bot.set_webhook(WEBHOOK_URL)
     
-    # Регистрация команд бота
+    # Register bot commands
     commands = [
         types.BotCommand(command="start", description="Start the bot"),
         types.BotCommand(command="instructions", description="Show instructions"),
@@ -50,7 +50,7 @@ async def main():
     await set_bot_version()
     await ensure_admin_in_db()
     
-    # Регистрация команд бота
+    # Register bot commands
     commands = [
         types.BotCommand(command="start", description="Start the bot"),
         types.BotCommand(command="instructions", description="Show instructions"),

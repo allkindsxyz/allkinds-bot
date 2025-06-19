@@ -15,7 +15,7 @@ TTL_SECONDS = TTL_DAYS * 24 * 60 * 60
 async def set_telegram_mapping(telegram_user_id: int, internal_user_id: int, ttl: int = TTL_SECONDS):
     key = f"tg2int:{telegram_user_id}"
     await redis.setex(key, ttl, internal_user_id)
-    # Двунаправленный маппинг
+    # Bidirectional mapping
     key2 = f"int2tg:{internal_user_id}"
     await redis.setex(key2, ttl, telegram_user_id)
 
@@ -39,10 +39,10 @@ async def get_or_restore_internal_user_id(state, telegram_user_id):
     if user_id:
         logging.info(f"[get_or_restore_internal_user_id] Found user_id in state: {user_id}")
         return user_id
-    # Пробуем восстановить из Redis
+    # Try to restore from Redis
     user_id = await get_internal_user_id(telegram_user_id)
     if user_id:
-        # Проверяем, есть ли такой пользователь в БД
+        # Check if such user exists in DB
         async with AsyncSessionLocal() as session:
             user = await session.execute(select(User).where(User.id == user_id))
             user = user.scalar()
@@ -52,10 +52,10 @@ async def get_or_restore_internal_user_id(state, telegram_user_id):
                 return user_id
             else:
                 logging.warning(f"[get_or_restore_internal_user_id] user_id from Redis not found in DB: {user_id}")
-                # Удаляем устаревшие mapping-и
+                # Remove outdated mappings
                 await redis.delete(f"tg2int:{telegram_user_id}")
                 await redis.delete(f"int2tg:{user_id}")
-    # Если не найден — создать нового пользователя и обновить Redis
+    # If not found — create new user and update Redis
     async with AsyncSessionLocal() as session:
         user = User()
         session.add(user)

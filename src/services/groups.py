@@ -293,13 +293,13 @@ async def find_best_match(user_id: int, group_id: int, exclude_user_ids: list[in
         user = user.scalar()
         if not user:
             return None
-        # Исключаем пользователей с match_status
+        # Exclude users with match_status
         statuses = await session.execute(select(MatchStatus.match_user_id, MatchStatus.status).where(
             MatchStatus.user_id == user.id, MatchStatus.group_id == group_id))
         for match_user_id, status in statuses.all():
             if status in ("hidden", "postponed", "pending_approval", "rejected", "blocked"):
                 exclude_user_ids.append(match_user_id)
-        # Получаем все ответы пользователя по вопросам группы
+        # Get all user's answers for group questions
         user_answers = await session.execute(
             select(Answer.question_id, Answer.value).where(
                 Answer.user_id == user.id,
@@ -310,12 +310,12 @@ async def find_best_match(user_id: int, group_id: int, exclude_user_ids: list[in
         user_answers = {row[0]: row[1] for row in user_answers.all()}
         if not user_answers:
             return None
-        # Получаем всех других участников группы
+        # Get all other group members
         members = await session.execute(select(GroupMember).where(GroupMember.group_id == group_id, GroupMember.user_id != user.id))
         members = members.scalars().all()
         if not members:
             return None
-        # Считаем количество валидных пользователей для мэтча
+        # Count valid users for match
         valid_users_count = 0
         best_match = None
         best_score = -1
@@ -325,7 +325,7 @@ async def find_best_match(user_id: int, group_id: int, exclude_user_ids: list[in
         for member in members:
             if member.user_id in exclude_user_ids:
                 continue
-            # Ответы мэтча
+            # Match answers
             match_answers = await session.execute(
                 select(Answer.question_id, Answer.value).where(
                     Answer.user_id == member.user_id,
@@ -336,7 +336,7 @@ async def find_best_match(user_id: int, group_id: int, exclude_user_ids: list[in
             match_answers = {row[0]: row[1] for row in match_answers.all()}
             if not match_answers:
                 continue
-            # Считаем similarity по формуле
+            # Calculate similarity by formula
             total = 0
             dist_sum = 0
             for qid, uval in user_answers.items():
@@ -346,7 +346,7 @@ async def find_best_match(user_id: int, group_id: int, exclude_user_ids: list[in
                     dist_sum += abs(uval - mval)
             if total < 3:
                 not_enough_common = True
-                continue  # слишком мало общих вопросов
+                continue  # too few common questions
             valid_users_count += 1
             similarity = 1 - (dist_sum / (max_distance * total))
             percent = int(similarity * 100)
@@ -355,7 +355,7 @@ async def find_best_match(user_id: int, group_id: int, exclude_user_ids: list[in
                 best_match = member
                 best_common_questions = total
         if best_match:
-            # Получаем ник и фото мэтча
+            # Get match nickname and photo
             match_user = await session.execute(select(User).where(User.id == best_match.user_id))
             match_user = match_user.scalar()
             return {

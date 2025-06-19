@@ -38,10 +38,10 @@ async def is_duplicate_question(session, group_id, text):
     return q.scalar() is not None
 
 async def moderate_question(text):
-    # Простейшая модерация: запрещаем слишком короткие вопросы и явный спам
+    # Basic moderation: reject too short questions and obvious spam
     if len(text.strip()) < 5:
         return False, "Question too short."
-    # TODO: добавить AI/ML фильтрацию
+    # TODO: add AI/ML filtering
     return True, None
 
 async def get_group_members(session, group_id):

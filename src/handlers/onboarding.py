@@ -1,5 +1,5 @@
-# Хендлеры для онбординга
-# Импорты и вызовы сервисов будут добавлены после выноса бизнес-логики 
+# Handlers for onboarding
+# Imports and service calls will be added after extracting business logic
 
 from aiogram import types, F, Router
 from aiogram.fsm.context import FSMContext
@@ -9,7 +9,7 @@ from src.fsm.states import Onboarding
 from src.db import AsyncSessionLocal
 from src.models import User, Answer, Question
 from src.services.questions import get_next_unanswered_question
-from src.handlers.questions import send_question_to_user, update_badge_after_answer
+from src.handlers.questions import send_question_to_user, update_badge_after_answer, update_unanswered_questions_badge
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from sqlalchemy import select, and_
 from src.texts.messages import (
@@ -94,7 +94,7 @@ async def onboarding_location(message: types.Message, state: FSMContext):
             return
         complete = await is_onboarding_complete_service(user_id, group_id)
         if complete:
-            # Создаем delivered ответы для всех существующих вопросов в группе
+            # Create delivered answers for all existing questions in the group
             questions = await session.execute(select(Question).where(Question.group_id == group_id, Question.is_deleted == 0))
             questions = questions.scalars().all()
             for question in questions:
@@ -104,8 +104,8 @@ async def onboarding_location(message: types.Message, state: FSMContext):
                     session.add(Answer(question_id=question.id, user_id=user_id, status='delivered'))
             await session.commit()
             
-            # Обновляем бейдж с количеством неотвеченных вопросов
-            await update_badge_after_answer(message.bot, user, group_id)
+            # Update badge with count of unanswered questions
+            await update_unanswered_questions_badge(message.bot, user, group_id)
             
             await state.clear()
             await state.update_data(internal_user_id=user_id)
@@ -116,9 +116,9 @@ async def onboarding_location(message: types.Message, state: FSMContext):
             await message.answer(get_message("ONBOARDING_SOMETHING_WRONG", user or message.from_user))
             await state.clear()
 
-# Заглушка для нормализации города/страны через OpenAI
+# Stub for city/country normalization via OpenAI
 async def normalize_city_country(text: str):
-    # Без OpenAI: просто делим по запятой, если есть
+    # Without OpenAI: just split by comma if present
     if "," in text:
         parts = [p.strip() for p in text.split(",", 1)]
         city = parts[0]
@@ -130,14 +130,14 @@ async def normalize_city_country(text: str):
     return city, country
 
 async def show_group_main_flow_after_onboarding(message, telegram_user_id, group_id):
-    """После онбординга: показать первый вопрос или сообщение, а также кнопку Load answered questions только если есть ответы."""
+    """After onboarding: show first question or message, and Load answered questions button only if there are answers."""
     async with AsyncSessionLocal() as session:
         user = await session.execute(select(User).where(User.id == telegram_user_id))
         user = user.scalar()
         if not user:
             await message.answer(get_message("ONBOARDING_INTERNAL_ERROR", message.from_user))
             return
-        # Проверяем, есть ли хотя бы один ответ в этой группе
+        # Check if there's at least one answer in this group
         answers_count = await session.execute(
             select(Answer).where(
                 Answer.user_id == user.id,
@@ -146,17 +146,17 @@ async def show_group_main_flow_after_onboarding(message, telegram_user_id, group
             )
         )
         answers_count = len(answers_count.scalars().all())
-        # Ищем первый неотвеченный вопрос
+        # Find first unanswered question
         next_q = await get_next_unanswered_question(session, group_id, user.id)
         if next_q:
-            # Проверяем, не был ли этот вопрос уже доставлен
+            # Check if this question was already delivered
             existing_ans = await session.execute(select(Answer).where(and_(Answer.question_id == next_q.id, Answer.user_id == user.id)))
             existing_ans = existing_ans.scalar()
             if not existing_ans or existing_ans.status != 'delivered':
                 await send_question_to_user(message.bot, user, next_q)
         else:
             await message.answer("No new questions in this group yet.")
-        # Кнопка Load answered questions — только если есть хотя бы один ответ
+        # Load answered questions button — only if there's at least one answer
         if answers_count > 0:
             kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="Load answered questions", callback_data="load_answered_questions")]])
             await message.answer("You can review your answered questions:", reply_markup=kb) 

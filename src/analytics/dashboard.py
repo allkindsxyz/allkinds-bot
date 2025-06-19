@@ -7,7 +7,6 @@ DASHBOARD_HTML = """
     <title>Allkinds Bot Analytics</title>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
         body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; margin: 0; padding: 20px; background: #f5f5f7; }
         .container { max-width: 1200px; margin: 0 auto; }
@@ -16,7 +15,6 @@ DASHBOARD_HTML = """
         .stat-card { background: white; padding: 20px; border-radius: 12px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
         .stat-number { font-size: 2.5em; font-weight: bold; color: #007AFF; margin-bottom: 5px; }
         .stat-label { color: #666; font-size: 0.9em; }
-        .chart-container { background: white; padding: 20px; border-radius: 12px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); margin-bottom: 20px; }
         .groups-list { background: white; padding: 20px; border-radius: 12px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
         .group-item { padding: 15px; border-bottom: 1px solid #eee; display: flex; justify-content: space-between; align-items: center; cursor: pointer; transition: background-color 0.2s; }
         .group-item:hover { background-color: #f8f9fa; }
@@ -59,11 +57,6 @@ DASHBOARD_HTML = """
                 <!-- Stats will be loaded here -->
             </div>
             
-            <div class="chart-container" id="chartContainer" style="display: none;">
-                <h3>Activity Overview</h3>
-                <canvas id="activityChart" width="400" height="200"></canvas>
-            </div>
-            
             <div class="groups-list" id="groupsContainer" style="display: none;">
                 <h3>Groups (click to view details)</h3>
                 <div id="groupsList">
@@ -81,7 +74,6 @@ DASHBOARD_HTML = """
     </div>
     
     <script>
-        let activityChart;
         let currentGroupId = null;
         let globalData = null;
         let groupsData = null;
@@ -114,12 +106,10 @@ DASHBOARD_HTML = """
             
             if (globalData && groupsData) {
                 updateStats(globalData);
-                updateChart(globalData);
                 updateGroups(groupsData);
                 
                 document.getElementById('loading').style.display = 'none';
                 document.getElementById('statsGrid').style.display = 'grid';
-                document.getElementById('chartContainer').style.display = 'block';
                 document.getElementById('groupsContainer').style.display = 'block';
             }
         }
@@ -187,19 +177,19 @@ DASHBOARD_HTML = """
                     <span class="detail-label">⚡ Active Today</span>
                     <span class="detail-value">${groupStats.active_users_today}</span>
                 </div>
-                                 <div class="detail-row">
-                     <span class="detail-label">📅 Active This Week</span>
-                     <span class="detail-value">${groupStats.active_users_week}</span>
-                 </div>
-                 <div class="detail-row">
-                     <span class="detail-label">📊 Avg Answers per User</span>
-                     <span class="detail-value">${groupStats.avg_answers_per_user}</span>
-                 </div>
-                 <div class="detail-row">
-                     <span class="detail-label">📊 Avg Questions per User</span>
-                     <span class="detail-value">${groupStats.avg_questions_per_user}</span>
-                 </div>
-             `;
+                <div class="detail-row">
+                    <span class="detail-label">📅 Active This Week</span>
+                    <span class="detail-value">${groupStats.active_users_week}</span>
+                </div>
+                <div class="detail-row">
+                    <span class="detail-label">📊 Avg Answers per User</span>
+                    <span class="detail-value">${groupStats.avg_answers_per_user}</span>
+                </div>
+                <div class="detail-row">
+                    <span class="detail-label">📊 Avg Questions per User</span>
+                    <span class="detail-value">${groupStats.avg_questions_per_user}</span>
+                </div>
+            `;
         }
         
         async function testAPI() {
@@ -234,7 +224,6 @@ DASHBOARD_HTML = """
             }
             
             document.getElementById('statsGrid').style.display = 'none';
-            document.getElementById('chartContainer').style.display = 'none';
             document.getElementById('groupsContainer').style.display = 'none';
             
             try {
@@ -263,12 +252,10 @@ DASHBOARD_HTML = """
                 console.log('Groups:', groupsData);
                 
                 updateStats(globalData);
-                updateChart(globalData);
                 updateGroups(groupsData);
                 
                 document.getElementById('loading').style.display = 'none';
                 document.getElementById('statsGrid').style.display = 'grid';
-                document.getElementById('chartContainer').style.display = 'block';
                 document.getElementById('groupsContainer').style.display = 'block';
                 
             } catch (error) {
@@ -308,34 +295,6 @@ DASHBOARD_HTML = """
                     <div class="stat-label">⚡ Active Today</div>
                 </div>
             `;
-        }
-        
-        function updateChart(stats) {
-            const ctx = document.getElementById('activityChart').getContext('2d');
-            
-            if (activityChart) {
-                activityChart.destroy();
-            }
-            
-            activityChart = new Chart(ctx, {
-                type: 'doughnut',
-                data: {
-                    labels: ['Questions', 'Answers'],
-                    datasets: [{
-                        data: [stats.total_questions, stats.total_answers],
-                        backgroundColor: ['#007AFF', '#34C759'],
-                        borderWidth: 0
-                    }]
-                },
-                options: {
-                    responsive: true,
-                    plugins: {
-                        legend: {
-                            position: 'bottom'
-                        }
-                    }
-                }
-            });
         }
         
         function updateGroups(groups) {
