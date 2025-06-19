@@ -26,13 +26,17 @@ MESSAGES = {
         "GROUPS_PROFILE_SETUP": "🔧 Time to personalise—enter your nickname:",
         "GROUPS_REVIEW_ANSWERED": "🔍 Load your answered questions if you want to change them:",
         "GROUPS_FIND_MATCH": "👋 Welcome to <b>{group_name}</b>!\nYour balance: {balance}💎",
-        "GROUPS_SELECT": "👉 Which group do you want to switch to?",
+        "GROUPS_SELECT": "👉 Which group do you want to go to?",
         "GROUPS_WELCOME_ADMIN": "👋 Hey admin! Ready to manage your crew?",
         "GROUPS_WELCOME": "👋 Welcome to Allkinds! Enter a code to join.",
         "GROUPS_SWITCH_TO": "👉 Go to {group_name} now.",
         "GROUPS_INVITE_LINK": "🎉 <b>{group_name}</b>\n{group_desc}\nInvite: {deeplink}\nCode: {invite_code}",
         "NEW_QUESTION_NOTIFICATION": "📩 New question in queue: {question_text}...",
         "QUEUE_LOAD_UNANSWERED": "📋 Ready to answer questions from the queue?",
+        "GROUPS_LEFT_SUCCESS": "👋 You have successfully left the group.",
+        "GROUPS_LEFT_ERROR": "😕 Error leaving group. Please try again.",
+        "GROUPS_DELETED_SUCCESS": "🗑️ Group successfully deleted.",
+        "GROUPS_DELETED_ERROR": "😕 Error deleting group. Please try again.",
         # --- Questions ---
         "QUESTION_TOO_SHORT": "😅 Question's short—add some detail!",
         "QUESTION_MUST_JOIN_GROUP": "🔒 Join a group first to ask questions.",
@@ -76,7 +80,7 @@ MESSAGES = {
         # --- Buttons ---
         "BTN_CREATE_GROUP": "🌀 Kick off a new group",
         "BTN_JOIN_GROUP": "🔑 Join with an invite code",
-        "BTN_SWITCH_TO": "👉 Switch to {group_name}",
+        "BTN_SWITCH_TO": "👉 Go to {group_name}",
         "BTN_DELETE_GROUP": "🗑️ Delete {group_name}",
         "BTN_LEAVE_GROUP": "👋 Leave {group_name}",
         "BTN_DELETE": "🗑 Delete",
@@ -127,6 +131,10 @@ MESSAGES = {
         "GROUPS_INVITE_LINK": "🎉 <b>{group_name}</b>\n{group_desc}\nПриглашение: {deeplink}\nКод: {invite_code}",
         "NEW_QUESTION_NOTIFICATION": "📩 Новый вопрос в очереди: {question_text}...",
         "QUEUE_LOAD_UNANSWERED": "📋 Готов ответить на вопросы из очереди?",
+        "GROUPS_LEFT_SUCCESS": "👋 Вы успешно покинули группу.",
+        "GROUPS_LEFT_ERROR": "😕 Ошибка при выходе из группы. Пожалуйста, попробуйте ещё раз.",
+        "GROUPS_DELETED_SUCCESS": "🗑️ Группа успешно удалена.",
+        "GROUPS_DELETED_ERROR": "😕 Ошибка при удалении группы. Пожалуйста, попробуйте ещё раз.",
         # --- Questions ---
         "QUESTION_TOO_SHORT": "😅 Вопрос слишком короткий... Попробуй ещё раз.",
         "QUESTION_MUST_JOIN_GROUP": "🔒 Сначала присоединись к группе, чтобы задавать вопросы.",
@@ -161,7 +169,7 @@ MESSAGES = {
         # --- System/General ---
         "INSTRUCTIONS_TEXT": (
             "👋 Добро пожаловать в Allkinds! Здесь ты можешь найти людей, с которыми действительно есть шанс на контакт — не случайный, а основанный на общих ценностях. Вот как это работает:  "
-            "❓ Подумай, что для тебя действительно важно в человеке и сформулируй это как вопрос с ответом “да” или “нет”. Просто напиши его и отправь, как обычное сообщение. (+10💎)  "
+            "❓ Подумай, что для тебя действительно важно в человеке и сформулируй это как вопрос с ответом \"да\" или \"нет\". Просто напиши его и отправь, как обычное сообщение. (+10💎)  "
             "\n☝️ Все вопросы в этой группе были заданы другими участниками. Отвечай на них и получай +1💎  "
             "\n🔍 В любой момент есть кто-то в группе, чьи ответы совпадают с твоими больше всёех остальных. Найди этого человека, используя кнопку «🔍 Кто сейчас резонирует больше всех». (-5💎)  "
             "\n🧩 Ты можешь связаться со своим совпадением, оставить на потом или заблокировать, если не интересно.  "
@@ -233,6 +241,10 @@ GROUPS_WELCOME_ADMIN = "GROUPS_WELCOME_ADMIN"
 GROUPS_WELCOME = "GROUPS_WELCOME"
 GROUPS_SWITCH_TO = "GROUPS_SWITCH_TO"
 GROUPS_INVITE_LINK = "GROUPS_INVITE_LINK"
+GROUPS_LEFT_SUCCESS = "GROUPS_LEFT_SUCCESS"
+GROUPS_LEFT_ERROR = "GROUPS_LEFT_ERROR"
+GROUPS_DELETED_SUCCESS = "GROUPS_DELETED_SUCCESS"
+GROUPS_DELETED_ERROR = "GROUPS_DELETED_ERROR"
 
 # --- Questions ---
 QUESTION_TOO_SHORT = "QUESTION_TOO_SHORT"

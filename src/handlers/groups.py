@@ -9,7 +9,7 @@ from src.models import Group, GroupMember, User, Answer, Question, MatchStatus, 
 from aiogram import types, F, Router
 from aiogram.fsm.context import FSMContext
 from src.loader import bot
-from src.keyboards.groups import get_admin_keyboard, get_user_keyboard, go_to_group_keyboard, get_group_main_keyboard, get_confirm_delete_keyboard, location_keyboard, get_group_reply_keyboard
+from src.keyboards.groups import get_admin_keyboard, get_user_keyboard, go_to_group_keyboard, get_group_main_keyboard, get_confirm_delete_keyboard, get_confirm_leave_keyboard, location_keyboard, get_group_reply_keyboard
 from src.fsm.states import CreateGroup, JoinGroup
 from src.services.groups import (
     get_user_groups, is_group_creator, get_group_members, create_group_service,
@@ -30,7 +30,8 @@ from src.texts.messages import (
     MATCH_REQUEST_SENT, MATCH_INCOMING_REQUEST, MATCH_REQUEST_ACCEPTED, MATCH_REQUEST_REJECTED, MATCH_REQUEST_BLOCKED,
     BTN_ACCEPT_MATCH, BTN_REJECT_MATCH, BTN_BLOCK_MATCH, BTN_GO_TO_CHAT,
     QUESTION_LOAD_ANSWERED, NO_AVAILABLE_ANSWERED_QUESTIONS, BTN_LOAD_UNANSWERED, UNANSWERED_QUESTIONS_MSG,
-    MATCH_NO_OTHERS, QUEUE_LOAD_UNANSWERED
+    MATCH_NO_OTHERS, QUEUE_LOAD_UNANSWERED,
+    GROUPS_LEFT_SUCCESS, GROUPS_LEFT_ERROR, GROUPS_DELETED_SUCCESS, GROUPS_DELETED_ERROR
 )
 from src.utils.redis import get_or_restore_internal_user_id, get_telegram_user_id
 
@@ -300,11 +301,14 @@ async def cb_confirm_leave_group(callback: types.CallbackQuery, state: FSMContex
         await callback.message.answer(get_message("Please start the bot to use this feature.", user=callback.from_user))
         await callback.answer()
         return
+    async with AsyncSessionLocal() as session:
+        user = await session.execute(select(User).where(User.id == user_id))
+        user = user.scalar()
     groups = await get_user_groups(user_id)
     group = next((g for g in groups if g["id"] == group_id), None)
     group_name = group["name"] if group else "this group"
     text = get_message(GROUPS_LEAVE_CONFIRM, user=user, group_name=group_name)
-    kb = get_confirm_delete_keyboard(group_id, user)
+    kb = get_confirm_leave_keyboard(group_id, user)
     msg = await callback.message.answer(text, reply_markup=kb, parse_mode="HTML")
     data = await state.get_data()
     leave_ids = data.get("leave_msgs", [])
@@ -316,6 +320,29 @@ async def cb_confirm_leave_group(callback: types.CallbackQuery, state: FSMContex
 async def cb_leave_group_cancel(callback: types.CallbackQuery, state: FSMContext):
     await clear_mygroups_messages(callback.message, state)
     await state.clear()
+    await callback.answer()
+
+@router.callback_query(F.data.startswith("leave_group_yes_"))
+async def cb_leave_group_yes(callback: types.CallbackQuery, state: FSMContext):
+    group_id = int(callback.data.split("_")[-1])
+    data = await state.get_data()
+    user_id = data.get('internal_user_id')
+    if not user_id:
+        await callback.message.answer(get_message("Please start the bot to use this feature.", user=callback.from_user))
+        await callback.answer()
+        return
+    async with AsyncSessionLocal() as session:
+        user = await session.execute(select(User).where(User.id == user_id))
+        user = user.scalar()
+    # Leave group via service
+    result = await leave_group_service(user_id, group_id)
+    if result["ok"]:
+        await callback.message.answer(get_message(GROUPS_LEFT_SUCCESS, user=user))
+        await clear_mygroups_messages(callback.message, state)
+        await state.clear()
+        await state.update_data(internal_user_id=user_id)
+    else:
+        await callback.message.answer(get_message(GROUPS_LEFT_ERROR, user=user))
     await callback.answer()
 
 @router.callback_query(F.data.startswith("confirm_delete_group_"))
@@ -359,12 +386,12 @@ async def cb_delete_group_yes(callback: types.CallbackQuery, state: FSMContext):
     # Delete group via service
     result = await delete_group_service(group_id)
     if result["ok"]:
-        await callback.message.answer(get_message("Group successfully deleted.", user=user))
+        await callback.message.answer(get_message(GROUPS_DELETED_SUCCESS, user=user))
         await clear_mygroups_messages(callback.message, state)
         await state.clear()
         await state.update_data(internal_user_id=user_id)
     else:
-        await callback.message.answer(get_message("Error deleting group.", user=user))
+        await callback.message.answer(get_message(GROUPS_DELETED_ERROR, user=user))
     await callback.answer()
 
 # --- Group-related handlers ---

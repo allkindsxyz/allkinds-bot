@@ -36,6 +36,13 @@ def get_confirm_delete_keyboard(group_id, user):
     ]]
     return InlineKeyboardMarkup(inline_keyboard=kb)
 
+def get_confirm_leave_keyboard(group_id, user):
+    kb = [[
+        InlineKeyboardButton(text="✅ Yes, leave", callback_data=f"leave_group_yes_{group_id}"),
+        InlineKeyboardButton(text=get_message(BTN_CANCEL, user=user), callback_data=f"leave_group_cancel_{group_id}")
+    ]]
+    return InlineKeyboardMarkup(inline_keyboard=kb)
+
 def location_keyboard(user):
     return ReplyKeyboardMarkup(
         keyboard=[[KeyboardButton(text=get_message(BTN_SEND_LOCATION, user=user), request_location=True)]],
