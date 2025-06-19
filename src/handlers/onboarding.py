@@ -9,7 +9,7 @@ from src.fsm.states import Onboarding
 from src.db import AsyncSessionLocal
 from src.models import User, Answer, Question
 from src.services.questions import get_next_unanswered_question
-from src.handlers.questions import send_question_to_user, update_badge_after_answer, update_unanswered_questions_badge
+from src.handlers.questions import send_question_to_user, update_badge_after_answer
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from sqlalchemy import select, and_
 from src.texts.messages import (
@@ -105,7 +105,7 @@ async def onboarding_location(message: types.Message, state: FSMContext):
             await session.commit()
             
             # Update badge with count of unanswered questions
-            await update_unanswered_questions_badge(message.bot, user, group_id)
+            await update_badge_after_answer(message.bot, user, group_id)
             
             await state.clear()
             await state.update_data(internal_user_id=user_id)
