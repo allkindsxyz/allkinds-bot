@@ -875,6 +875,8 @@ async def cb_accept_match(callback: types.CallbackQuery, state: FSMContext):
             [types.InlineKeyboardButton(text=get_message(BTN_GO_TO_CHAT, user=user), url=link)]
         ])
         
+        initiator_member = await session.execute(select(GroupMember).where(GroupMember.user_id == initiator.id, GroupMember.group_id == group_id))
+        initiator_member = initiator_member.scalar()
         await callback.message.answer(
             get_message(MATCH_REQUEST_ACCEPTED, user=user, nickname=initiator_member.nickname if initiator_member else "Unknown"),
             reply_markup=kb
