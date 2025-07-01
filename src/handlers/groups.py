@@ -488,6 +488,9 @@ async def cb_join_group(callback: types.CallbackQuery, state: FSMContext):
         await callback.message.answer(get_message("Please start the bot to use this feature.", user=callback.from_user))
         await callback.answer()
         return
+    async with AsyncSessionLocal() as session:
+        user = await session.execute(select(User).where(User.id == user_id))
+        user = user.scalar()
     await callback.message.answer(get_message("Enter the 5-character invite code:", user=user), reply_markup=types.ReplyKeyboardRemove())
     from src.fsm.states import JoinGroup
     await state.set_state(JoinGroup.code)
