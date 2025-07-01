@@ -9,7 +9,7 @@ from src.handlers.questions import send_question_to_user
 from src.services.groups import get_user_groups, is_group_creator, is_onboarded, get_group_balance, join_group_by_code_service, ensure_admin_in_db
 from src.services.onboarding import is_onboarding_complete_service
 from src.db import AsyncSessionLocal
-from sqlalchemy import select
+from sqlalchemy import select, and_
 from src.models import User, GroupMember, GroupCreator
 from src.keyboards.groups import get_user_keyboard, get_admin_keyboard, get_group_reply_keyboard
 from src.utils.redis import get_internal_user_id, set_telegram_mapping, update_ttl, get_or_restore_internal_user_id
