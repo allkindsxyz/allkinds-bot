@@ -162,6 +162,28 @@ async def start(message: types.Message, state: FSMContext):
                 InlineKeyboardButton(text=get_message(BTN_CREATE_GROUP, user=user), callback_data="create_new_group")
             ])
         await message.answer(get_message(GROUPS_SELECT, user), reply_markup=kb)
+        # --- PUSH первого неотвеченного вопроса, если есть ---
+        from src.db import AsyncSessionLocal
+        from src.models import Question, Answer
+        from sqlalchemy import select, and_
+        from src.handlers.questions import send_question_to_user
+        async with AsyncSessionLocal() as session:
+            user_obj = await session.execute(select(User).where(User.id == internal_user_id))
+            user_obj = user_obj.scalar()
+            if user_obj and user_obj.current_group_id:
+                questions = await session.execute(
+                    select(Question).where(
+                        Question.group_id == user_obj.current_group_id,
+                        Question.is_deleted == 0
+                    ).order_by(Question.created_at)
+                )
+                questions = questions.scalars().all()
+                for q in questions:
+                    ans = await session.execute(select(Answer).where(and_(Answer.question_id == q.id, Answer.user_id == user_obj.id)))
+                    ans = ans.scalar()
+                    if not ans:
+                        await send_question_to_user(message.bot, user_obj, q)
+                        break
         return
     except Exception as e:
         logging.exception("Error in /start handler")
