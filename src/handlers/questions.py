@@ -14,7 +14,7 @@ from src.services.questions import (
 )
 from src.constants import POINTS_FOR_NEW_QUESTION, POINTS_FOR_ANSWER
 from src.db import AsyncSessionLocal
-from sqlalchemy import select, and_
+from sqlalchemy import select, and_, delete
 from src.models import User, GroupMember, Question, Answer, Group
 from src.texts.messages import (
     get_message,
@@ -82,9 +82,7 @@ async def handle_new_question(message: types.Message, state: FSMContext):
             await info_msg.delete()
         except Exception:
             pass
-        from src.handlers.questions import send_question_to_user
-        await send_question_to_user(message.bot, user, q)
-    # Update badges for other group members (don't send questions)
+        # Не пушим вопрос автору, он появится в очереди неотвеченных
     async with AsyncSessionLocal() as session:
         group_members = await session.execute(select(GroupMember, User).join(User).where(GroupMember.group_id == user.current_group_id))
         group_members = group_members.all()
@@ -347,14 +345,20 @@ async def cb_load_unanswered(callback: types.CallbackQuery, state: FSMContext):
     async with AsyncSessionLocal() as session:
         user = await session.execute(select(User).where(User.id == user_id))
         user = user.scalar()
-        unanswered = await session.execute(
-            select(Answer).where(
-                Answer.user_id == user.id,
-                Answer.status == 'delivered',
-                Answer.value.is_(None)
-            )
+        # Новый динамический запрос: все вопросы группы, на которые нет Answer
+        questions = await session.execute(
+            select(Question).where(
+                Question.group_id == user.current_group_id,
+                Question.is_deleted == 0
+            ).order_by(Question.created_at)
         )
-        unanswered = unanswered.scalars().all()
+        questions = questions.scalars().all()
+        unanswered = []
+        for q in questions:
+            ans = await session.execute(select(Answer).where(and_(Answer.question_id == q.id, Answer.user_id == user.id)))
+            ans = ans.scalar()
+            if not ans:
+                unanswered.append(q)
         if not unanswered:
             try:
                 await callback.message.delete()
@@ -362,12 +366,10 @@ async def cb_load_unanswered(callback: types.CallbackQuery, state: FSMContext):
                 pass
             await callback.answer()
             return
-        # Show first unanswered delivered-question
-        question = await session.execute(select(Question).where(Question.id == unanswered[0].question_id))
-        question = question.scalar()
+        # Показываем первый неотвеченный вопрос
         from src.handlers.questions import send_question_to_user
-        await send_question_to_user(callback.bot, user, question)
-        # If there are more — show button again
+        await send_question_to_user(callback.bot, user, unanswered[0])
+        # Если есть ещё — показываем кнопку снова
         if len(unanswered) > 1:
             msg = get_message(UNANSWERED_QUESTIONS_MSG, user=user, count=len(unanswered)-1)
             kb = types.InlineKeyboardMarkup(inline_keyboard=[[types.InlineKeyboardButton(text=get_message(BTN_LOAD_UNANSWERED, user=user), callback_data="load_unanswered")]])
@@ -442,17 +444,7 @@ async def send_question_to_user(bot, user, question, creator_user_id=None, group
         text = f"<b>{group_name}</b>: {question.text}"
     else:
         text = question.text
-    # --- Create Answer with status delivered, if not ---
-    async with AsyncSessionLocal() as session:
-        ans = await session.execute(select(Answer).where(and_(Answer.question_id == question.id, Answer.user_id == user.id)))
-        ans = ans.scalar()
-        if not ans:
-            ans = Answer(question_id=question.id, user_id=user.id, status='delivered')
-            session.add(ans)
-            await session.commit()
-            logging.warning(f"[send_question_to_user] Created new Answer for question_id={question.id}, user_id={user.id}")
-        else:
-            logging.warning(f"[send_question_to_user] Answer already exists for question_id={question.id}, user_id={user.id}, status={ans.status}, value={ans.value}")
+    # Не создаём Answer заранее!
     answer_buttons = [types.InlineKeyboardButton(text=ANSWER_VALUE_TO_EMOJI[val], callback_data=f"answer_{question.id}_{val}") for val, emoji in ANSWER_VALUES]
     keyboard = [answer_buttons]
     if is_author or is_creator:
@@ -461,7 +453,6 @@ async def send_question_to_user(bot, user, question, creator_user_id=None, group
     telegram_user_id = await get_telegram_user_id(user.id)
     logging.warning(f"[send_question_to_user] telegram_user_id={telegram_user_id}")
     if not telegram_user_id:
-        # Попробовать восстановить маппинг, если есть user.telegram_user_id
         tg_id = getattr(user, 'telegram_user_id', None)
         if tg_id:
             await set_telegram_mapping(tg_id, user.id)
@@ -501,101 +492,67 @@ async def send_answered_question_to_user(bot, user, question, value, group_name=
         await bot.send_message(telegram_user_id, text, reply_markup=kb, parse_mode="HTML")
 
 async def update_badge_for_new_question(bot, user, new_question):
-    """
-    Updates badge when creating new question:
-    - If user has 0 unanswered → send push + show question + badge
-    - If user has >0 unanswered → only update badge (question goes to queue)
-    """
     from src.utils.redis import get_telegram_user_id
-    
     async with AsyncSessionLocal() as session:
-        # First count how many were unanswered BEFORE adding new question
-        old_unanswered_count = await session.execute(
-            select(Answer).where(
-                Answer.user_id == user.id,
-                Answer.status == 'delivered',
-                Answer.value.is_(None),
-                Answer.question_id.in_(select(Question.id).where(Question.group_id == new_question.group_id, Question.is_deleted == 0))
+        # Новый способ: считаем вопросы, на которые нет Answer
+        questions = await session.execute(
+            select(Question).where(
+                Question.group_id == new_question.group_id,
+                Question.is_deleted == 0
             )
         )
-        old_unanswered_count = len(old_unanswered_count.scalars().all())
-        
-        # Create delivered Answer for new question
-        existing_ans = await session.execute(select(Answer).where(and_(Answer.question_id == new_question.id, Answer.user_id == user.id)))
-        existing_ans = existing_ans.scalar()
-        if not existing_ans:
-            session.add(Answer(question_id=new_question.id, user_id=user.id, status='delivered'))
-            await session.commit()
-        
-        # Count unanswered questions in group AFTER adding
-        unanswered_count = await session.execute(
-            select(Answer).where(
-                Answer.user_id == user.id,
-                Answer.status == 'delivered',
-                Answer.value.is_(None),
-                Answer.question_id.in_(select(Question.id).where(Question.group_id == new_question.group_id, Question.is_deleted == 0))
-            )
-        )
-        unanswered_count = len(unanswered_count.scalars().all())
-        
+        questions = questions.scalars().all()
+        unanswered = 0
+        for q in questions:
+            ans = await session.execute(select(Answer).where(and_(Answer.question_id == q.id, Answer.user_id == user.id)))
+            ans = ans.scalar()
+            if not ans:
+                unanswered += 1
         telegram_user_id = await get_telegram_user_id(user.id)
         if not telegram_user_id:
             return
-        
-        if old_unanswered_count == 0:
-            # User had no unanswered questions - show new question immediately
-            try:
-                await send_question_to_user(bot, user, new_question)
-                logging.info(f"[update_badge_for_new_question] Sent new question to user {user.id} (was 0 unanswered)")
-            except Exception as e:
-                logging.error(f"[update_badge_for_new_question] Failed to send question: {e}")
-        else:
-            # User already had unanswered - new question goes to queue
-            logging.info(f"[update_badge_for_new_question] Question added to queue for user {user.id} (had {old_unanswered_count} unanswered)")
-        
-        # Update badge (logging only for now)
         try:
-            # badge_text = f"🔔 You have {unanswered_count} unanswered questions"
+            # badge_text = f"🔔 You have {unanswered} unanswered questions"
             # await bot.send_message(telegram_user_id, badge_text)
-            logging.info(f"[update_badge_for_new_question] Updated badge for user {user.id}: {unanswered_count} unanswered")
+            logging.info(f"[update_badge_for_new_question] Updated badge for user {user.id}: {unanswered} unanswered")
         except Exception as e:
             logging.error(f"[update_badge_for_new_question] Failed to update badge: {e}")
 
 async def update_badge_after_answer(bot, user, group_id):
-    """
-    Updates badge after answering a question:
-    - Counts remaining unanswered questions
-    - If becomes 0 → removes badge
-    - If >0 → updates badge with new count
-    """
     from src.utils.redis import get_telegram_user_id
-    
     async with AsyncSessionLocal() as session:
-        # Count remaining unanswered questions in group
-        unanswered_count = await session.execute(
-            select(Answer).where(
-                Answer.user_id == user.id,
-                Answer.status == 'delivered',
-                Answer.value.is_(None),
-                Answer.question_id.in_(select(Question.id).where(Question.group_id == group_id, Question.is_deleted == 0))
+        questions = await session.execute(
+            select(Question).where(
+                Question.group_id == group_id,
+                Question.is_deleted == 0
             )
         )
-        unanswered_count = len(unanswered_count.scalars().all())
-        
+        questions = questions.scalars().all()
+        unanswered = 0
+        for q in questions:
+            ans = await session.execute(select(Answer).where(and_(Answer.question_id == q.id, Answer.user_id == user.id)))
+            ans = ans.scalar()
+            if not ans:
+                unanswered += 1
         telegram_user_id = await get_telegram_user_id(user.id)
         if not telegram_user_id:
             return
-        
         try:
-            if unanswered_count == 0:
-                # Remove badge - no more unanswered questions
+            if unanswered == 0:
                 # badge_text = "✅ All questions answered!"
                 # await bot.send_message(telegram_user_id, badge_text)
                 logging.info(f"[update_badge_after_answer] Removed badge for user {user.id}: no more unanswered questions")
             else:
-                # Update badge with new count
-                # badge_text = f"🔔 You have {unanswered_count} unanswered questions"
+                # badge_text = f"🔔 You have {unanswered} unanswered questions"
                 # await bot.send_message(telegram_user_id, badge_text)
-                logging.info(f"[update_badge_after_answer] Updated badge for user {user.id}: {unanswered_count} unanswered")
+                logging.info(f"[update_badge_after_answer] Updated badge for user {user.id}: {unanswered} unanswered")
         except Exception as e:
-            logging.error(f"[update_badge_after_answer] Failed to update badge: {e}") 
+            logging.error(f"[update_badge_after_answer] Failed to update badge: {e}")
+
+async def cleanup_old_delivered_answers():
+    """Удалить все старые delivered Answer без value (устаревшие очереди)."""
+    async with AsyncSessionLocal() as session:
+        await session.execute(
+            delete(Answer).where(Answer.status == 'delivered', Answer.value.is_(None))
+        )
+        await session.commit() 
