@@ -154,20 +154,13 @@ async def cb_answer_question(callback: types.CallbackQuery, state: FSMContext):
         await session.commit()
         await show_question_with_selected_button(callback, question, user, value, creator_user_id)
         await callback.answer(get_message(QUESTION_ANSWER_SAVED, user=user))
-        # Пушим следующий неотвеченный вопрос, если есть
-        questions = await session.execute(
-            select(Question).where(
-                Question.group_id == question.group_id,
-                Question.is_deleted == 0
-            ).order_by(Question.created_at)
-        )
-        questions = questions.scalars().all()
-        for q in questions:
-            ans = await session.execute(select(Answer).where(and_(Answer.question_id == q.id, Answer.user_id == user.id)))
-            ans = ans.scalar()
-            if not ans:
-                await send_question_to_user(callback.bot, user, q, creator_user_id, question.group_id)
-                break
+        # Пушим следующий неотвеченный вопрос, если есть (через сервис)
+        next_q = await get_next_unanswered_question(session, question.group_id, user.id)
+        if next_q:
+            logging.warning(f"[cb_answer_question] Push next unanswered: user_id={user.id}, question_id={next_q.id}")
+            await send_question_to_user(callback.bot, user, next_q, creator_user_id, question.group_id)
+        else:
+            logging.warning(f"[cb_answer_question] No more unanswered for user_id={user.id}")
         # Update badge after answer (always)
         await update_badge_after_answer(callback.bot, user, question.group_id)
 
