@@ -24,7 +24,7 @@ from src.texts.messages import (
     QUESTION_DELETE, UNANSWERED_QUESTIONS_MSG, BTN_LOAD_UNANSWERED, GROUPS_NO_NEW_QUESTIONS, NEW_QUESTION_NOTIFICATION
 )
 import logging
-from src.utils.redis import get_telegram_user_id, get_or_restore_internal_user_id
+from src.utils.redis import get_telegram_user_id, get_or_restore_internal_user_id, set_telegram_mapping
 
 router = Router()
 
@@ -460,6 +460,13 @@ async def send_question_to_user(bot, user, question, creator_user_id=None, group
     kb = types.InlineKeyboardMarkup(inline_keyboard=keyboard)
     telegram_user_id = await get_telegram_user_id(user.id)
     logging.warning(f"[send_question_to_user] telegram_user_id={telegram_user_id}")
+    if not telegram_user_id:
+        # Попробовать восстановить маппинг, если есть user.telegram_user_id
+        tg_id = getattr(user, 'telegram_user_id', None)
+        if tg_id:
+            await set_telegram_mapping(tg_id, user.id)
+            telegram_user_id = tg_id
+            logging.info(f"[send_question_to_user] Restored mapping for user.id={user.id} <-> telegram_user_id={tg_id}")
     if telegram_user_id:
         await bot.send_message(telegram_user_id, text, reply_markup=kb, parse_mode="HTML")
         logging.warning(f"[send_question_to_user] sent to {telegram_user_id}")
