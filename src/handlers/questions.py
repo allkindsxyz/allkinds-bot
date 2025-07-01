@@ -82,7 +82,10 @@ async def handle_new_question(message: types.Message, state: FSMContext):
             await info_msg.delete()
         except Exception:
             pass
-        # Не пушим вопрос автору, он появится в очереди неотвеченных
+        # Показываем вопрос автору сразу (push)
+        from src.handlers.questions import send_question_to_user
+        await send_question_to_user(message.bot, user, q)
+    # Для остальных участников — обновляем бейджи и пушим только если нет очереди
     async with AsyncSessionLocal() as session:
         group_members = await session.execute(select(GroupMember, User).join(User).where(GroupMember.group_id == user.current_group_id))
         group_members = group_members.all()
@@ -494,7 +497,6 @@ async def send_answered_question_to_user(bot, user, question, value, group_name=
 async def update_badge_for_new_question(bot, user, new_question):
     from src.utils.redis import get_telegram_user_id
     async with AsyncSessionLocal() as session:
-        # Новый способ: считаем вопросы, на которые нет Answer
         questions = await session.execute(
             select(Question).where(
                 Question.group_id == new_question.group_id,
@@ -512,6 +514,10 @@ async def update_badge_for_new_question(bot, user, new_question):
         if not telegram_user_id:
             return
         try:
+            if unanswered == 1:
+                # Это был первый неотвеченный — пушим новый вопрос
+                await send_question_to_user(bot, user, new_question)
+                logging.info(f"[update_badge_for_new_question] Sent new question to user {user.id} (was 0 unanswered)")
             # badge_text = f"🔔 You have {unanswered} unanswered questions"
             # await bot.send_message(telegram_user_id, badge_text)
             logging.info(f"[update_badge_for_new_question] Updated badge for user {user.id}: {unanswered} unanswered")
