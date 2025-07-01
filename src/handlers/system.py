@@ -165,7 +165,6 @@ async def start(message: types.Message, state: FSMContext):
         # --- PUSH первого неотвеченного вопроса, если есть ---
         from src.db import AsyncSessionLocal
         from src.models import Question, Answer
-        from sqlalchemy import select, and_
         from src.handlers.questions import send_question_to_user
         async with AsyncSessionLocal() as session:
             user_obj = await session.execute(select(User).where(User.id == internal_user_id))
