@@ -405,6 +405,7 @@ async def find_best_match(user_id: int, group_id: int, exclude_user_ids: list[in
                 "user_id": best_match.user_id,
                 "nickname": best_match.nickname,
                 "photo_url": best_match.photo_url,
+                "intro": best_match.intro,
                 "similarity": best_score,
                 "common_questions": best_common_questions,
                 "valid_users_count": valid_users_count
@@ -412,6 +413,108 @@ async def find_best_match(user_id: int, group_id: int, exclude_user_ids: list[in
         if not_enough_common:
             return {"not_enough_common": True}
         return None
+
+async def find_all_matches(user_id: int, group_id: int, exclude_user_ids: list[int] = None) -> list[dict]:
+    """Найти всех возможных мэтчей для пользователя, отсортированных по убыванию similarity."""
+    exclude_user_ids = exclude_user_ids or []
+    async with AsyncSessionLocal() as session:
+        user = await session.execute(select(User).where(User.id == user_id))
+        user = user.scalar()
+        if not user:
+            return []
+        
+        # Exclude users with match_status
+        statuses = await session.execute(select(MatchStatus.match_user_id, MatchStatus.status).where(
+            MatchStatus.user_id == user.id, MatchStatus.group_id == group_id))
+        for match_user_id, status in statuses.all():
+            if status in ("hidden", "postponed", "pending_approval", "rejected", "blocked"):
+                exclude_user_ids.append(match_user_id)
+        
+        # Get all user's answers for group questions
+        user_answers = await session.execute(
+            select(Answer.question_id, Answer.value).where(
+                Answer.user_id == user.id,
+                Answer.value.isnot(None),
+                Answer.question_id.in_(select(Question.id).where(Question.group_id == group_id, Question.is_deleted == 0))
+            )
+        )
+        user_answers = {row[0]: row[1] for row in user_answers.all()}
+        if not user_answers:
+            return []
+        
+        # Get current user's gender preferences
+        current_member = await session.execute(select(GroupMember).where(
+            GroupMember.user_id == user.id, GroupMember.group_id == group_id))
+        current_member = current_member.scalar()
+        if not current_member:
+            return []
+        
+        # Get all members with mutual gender preference
+        members = await session.execute(select(GroupMember).where(
+            GroupMember.group_id == group_id,
+            GroupMember.user_id != user.id,
+            GroupMember.nickname.isnot(None),
+            GroupMember.photo_url.isnot(None),
+            GroupMember.gender.isnot(None),
+            GroupMember.looking_for.isnot(None)
+        ))
+        members = members.scalars().all()
+        
+        # Filter by mutual gender preferences
+        filtered_members = []
+        for member in members:
+            # Check if current user is looking for this member's gender
+            if current_member.looking_for != 'all' and current_member.looking_for != member.gender:
+                continue
+            # Check if this member is looking for current user's gender
+            if member.looking_for != 'all' and member.looking_for != current_member.gender:
+                continue
+            filtered_members.append(member)
+        
+        if not filtered_members:
+            return []
+        
+        # Calculate similarity for all members
+        matches = []
+        for member in filtered_members:
+            if member.user_id in exclude_user_ids:
+                continue
+                
+            # Match answers
+            match_answers = await session.execute(
+                select(Answer.question_id, Answer.value).where(
+                    Answer.user_id == member.user_id,
+                    Answer.value.isnot(None),
+                    Answer.question_id.in_(user_answers.keys())
+                )
+            )
+            match_answers = {row[0]: row[1] for row in match_answers.all()}
+            if not match_answers:
+                continue
+            
+            # Calculate common questions and similarity
+            common_questions = set(user_answers.keys()) & set(match_answers.keys())
+            if len(common_questions) < 3:  # Need at least 3 common questions
+                continue
+                
+            # Calculate similarity
+            distance = sum(abs(user_answers[q] - match_answers[q]) for q in common_questions)
+            max_distance = 4 * len(common_questions)
+            similarity = round((1 - distance / max_distance) * 100)
+            
+            matches.append({
+                "user_id": member.user_id,
+                "nickname": member.nickname,
+                "photo_url": member.photo_url,
+                "intro": member.intro,
+                "similarity": similarity,
+                "common_questions": len(common_questions),
+                "valid_users_count": len(filtered_members)
+            })
+        
+        # Sort by similarity descending
+        matches.sort(key=lambda x: x['similarity'], reverse=True)
+        return matches
 
 async def set_match_status(user_id: int, group_id: int, match_user_id: int, status: str):
     """Установить статус мэтча ('hidden' или 'postponed')."""

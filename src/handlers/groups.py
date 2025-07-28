@@ -26,7 +26,7 @@ from src.texts.messages import (
     GROUPS_PROFILE_SETUP, GROUPS_REVIEW_ANSWERED, GROUPS_FIND_MATCH, GROUPS_SELECT, GROUPS_WELCOME_ADMIN, GROUPS_WELCOME,
     GROUPS_SWITCH_TO, GROUPS_INVITE_LINK, BTN_CREATE_GROUP, BTN_JOIN_GROUP, BTN_SWITCH_TO, BTN_DELETE_GROUP, BTN_LEAVE_GROUP,
     BTN_DELETE, BTN_CANCEL, BTN_WHO_IS_VIBING,
-    MATCH_FOUND, MATCH_NO_VALID, MATCH_AI_CHEMISTRY, MATCH_SHOW_AGAIN, MATCH_DONT_SHOW,
+    MATCH_FOUND, MATCH_NO_VALID, MATCH_AI_CHEMISTRY, MATCH_SHOW_AGAIN, MATCH_DONT_SHOW, MATCH_PREV, MATCH_NEXT, MATCH_NOT_ENOUGH_POINTS,
     MATCH_REQUEST_SENT, MATCH_INCOMING_REQUEST, MATCH_REQUEST_ACCEPTED, MATCH_REQUEST_REJECTED, MATCH_REQUEST_BLOCKED,
     BTN_ACCEPT_MATCH, BTN_REJECT_MATCH, BTN_BLOCK_MATCH, BTN_GO_TO_CHAT,
     QUESTION_LOAD_ANSWERED, NO_AVAILABLE_ANSWERED_QUESTIONS, BTN_LOAD_UNANSWERED, UNANSWERED_QUESTIONS_MSG,
@@ -539,31 +539,141 @@ async def cb_find_match(callback: types.CallbackQuery, state: FSMContext):
         if answers_count < MIN_ANSWERS_FOR_MATCH:
             await callback.message.answer(get_message(f"You need to answer at least {MIN_ANSWERS_FOR_MATCH} questions to get a match. You have answered: {answers_count}. Keep answering or create new questions!", user=user))
             return
-        # Find match
-        match = await find_best_match(user_id, group_id)
-        if match and match.get('not_enough_common'):
-            await callback.message.answer(get_message("В группе есть другие участники, но у вас пока нет 3+ общих отвеченных вопросов. Ответьте на большее количество вопросов!", user=user))
-            await callback.answer(get_message(MATCH_NO_VALID, user=callback.from_user, show_alert=True))
-            return
-        if not match or not match.get('user_id'):
+        # Find all matches
+        from src.services.groups import find_all_matches
+        matches = await find_all_matches(user_id, group_id)
+        if not matches:
             await callback.message.answer(get_message(MATCH_NO_OTHERS, user=user))
             await callback.answer(get_message(MATCH_NO_VALID, user=callback.from_user, show_alert=True))
             return
-        # Deduct points
+        
+        # Deduct points for first match
         member.balance -= POINTS_FOR_MATCH
         await session.commit()
-        # Show match UX
-        text = get_message(MATCH_FOUND, user=user, nickname=match['nickname'], similarity=match['similarity'], common_questions=match['common_questions'], valid_users_count=match['valid_users_count'])
-        kb = types.InlineKeyboardMarkup(inline_keyboard=[
-            [types.InlineKeyboardButton(text=get_message(MATCH_AI_CHEMISTRY, user=user, points=POINTS_TO_CONNECT), callback_data=f"match_chat_{match['user_id']}")],
-            [types.InlineKeyboardButton(text=get_message(MATCH_SHOW_AGAIN, user=user), callback_data=f"match_postpone_{match['user_id']}")],
-            [types.InlineKeyboardButton(text=get_message(MATCH_DONT_SHOW, user=user), callback_data=f"match_hide_{match['user_id']}")]
-        ])
+        
+        # Show first match with navigation
+        await show_match_with_navigation(callback, user, matches, 0)
+
+async def show_match_with_navigation(callback_or_message, user, matches: list, index: int):
+    """Display match with navigation buttons"""
+    if not matches or index < 0 or index >= len(matches):
+        return
+    
+    match = matches[index]
+    
+    # Format intro text
+    intro_text = ""
+    if match.get('intro'):
+        intro_text = f"\n{match['intro']}"
+    
+    text = get_message(MATCH_FOUND, user=user, 
+                      nickname=match['nickname'], 
+                      intro=intro_text,
+                      similarity=match['similarity'], 
+                      common_questions=match['common_questions'], 
+                      valid_users_count=match['valid_users_count'])
+    
+    # Build navigation buttons
+    nav_buttons = []
+    if len(matches) > 1:
+        nav_row = []
+        if index > 0:
+            nav_row.append(types.InlineKeyboardButton(
+                text=get_message(MATCH_PREV, user=user), 
+                callback_data=f"match_nav_{index-1}"))
+        if index < len(matches) - 1:
+            nav_row.append(types.InlineKeyboardButton(
+                text=get_message(MATCH_NEXT, user=user), 
+                callback_data=f"match_nav_{index+1}"))
+        if nav_row:
+            nav_buttons.append(nav_row)
+    
+    kb = types.InlineKeyboardMarkup(inline_keyboard=[
+        *nav_buttons,
+        [types.InlineKeyboardButton(text=get_message(MATCH_AI_CHEMISTRY, user=user, points=POINTS_TO_CONNECT), callback_data=f"match_chat_{match['user_id']}")],
+        [types.InlineKeyboardButton(text=get_message(MATCH_SHOW_AGAIN, user=user), callback_data=f"match_postpone_{match['user_id']}")],
+        [types.InlineKeyboardButton(text=get_message(MATCH_DONT_SHOW, user=user), callback_data=f"match_hide_{match['user_id']}")]
+    ])
+    
+    if hasattr(callback_or_message, 'message'):  # It's a callback
+        # Store matches in state for navigation
+        from src.utils.redis import redis
+        import json
+        matches_data = json.dumps(matches)
+        await redis.set(f"matches_{user.id}", matches_data, ex=300)  # 5 min expiry
+        
         if match['photo_url']:
-            await callback.message.answer_photo(match['photo_url'], caption=text, reply_markup=kb, parse_mode="HTML")
+            if callback_or_message.message.photo:
+                # Edit existing photo message
+                await callback_or_message.message.edit_caption(caption=text, reply_markup=kb, parse_mode="HTML")
+            else:
+                # Delete text message and send photo
+                await callback_or_message.message.delete()
+                await callback_or_message.message.answer_photo(match['photo_url'], caption=text, reply_markup=kb, parse_mode="HTML")
         else:
-            await callback.message.answer(text, reply_markup=kb, parse_mode="HTML")
-        await callback.answer()
+            if callback_or_message.message.photo:
+                # Delete photo message and send text
+                await callback_or_message.message.delete()
+                await callback_or_message.message.answer(text, reply_markup=kb, parse_mode="HTML")
+            else:
+                # Edit existing text message
+                await callback_or_message.message.edit_text(text, reply_markup=kb, parse_mode="HTML")
+        await callback_or_message.answer()
+    else:  # It's a message
+        if match['photo_url']:
+            await callback_or_message.answer_photo(match['photo_url'], caption=text, reply_markup=kb, parse_mode="HTML")
+        else:
+            await callback_or_message.answer(text, reply_markup=kb, parse_mode="HTML")
+
+@router.callback_query(F.data.startswith("match_nav_"))
+async def cb_match_nav(callback: types.CallbackQuery, state: FSMContext):
+    """Handle match navigation"""
+    from src.utils.redis import get_or_restore_internal_user_id, redis
+    import json
+    
+    internal_user_id = await get_or_restore_internal_user_id(state, callback.from_user.id)
+    if not internal_user_id:
+        await callback.answer(get_message("Please start the bot to use this feature.", user=callback.from_user))
+        return
+    
+    new_index = int(callback.data.split("_")[-1])
+    
+    # Get stored matches
+    matches_data = await redis.get(f"matches_{internal_user_id}")
+    if not matches_data:
+        await callback.answer("Session expired. Please search for matches again.")
+        return
+    
+    matches = json.loads(matches_data)
+    
+    async with AsyncSessionLocal() as session:
+        user = await session.execute(select(User).where(User.id == internal_user_id))
+        user = user.scalar()
+        if not user:
+            await callback.answer("User not found.")
+            return
+        
+        group_id = user.current_group_id
+        member = await session.execute(select(GroupMember).where(
+            GroupMember.user_id == user.id, 
+            GroupMember.group_id == group_id))
+        member = member.scalar()
+        
+        # Check if going forward (need to charge points)
+        current_index = 0
+        for i, match_data in enumerate(matches):
+            if str(match_data['user_id']) in callback.message.reply_markup.inline_keyboard[-1][0].callback_data:
+                current_index = i
+                break
+        
+        if new_index > current_index:  # Going forward - charge points
+            if member.balance < POINTS_FOR_MATCH:
+                await callback.answer(get_message(MATCH_NOT_ENOUGH_POINTS, user=callback.from_user))
+                return
+            member.balance -= POINTS_FOR_MATCH
+            await session.commit()
+        
+        await show_match_with_navigation(callback, user, matches, new_index)
 
 @router.callback_query(F.data.startswith("match_hide_"))
 async def cb_match_hide(callback: types.CallbackQuery, state: FSMContext):
@@ -739,8 +849,9 @@ async def cb_match_chat(callback: types.CallbackQuery, state: FSMContext):
         request_text = get_message(MATCH_INCOMING_REQUEST, user=match_user, nickname=member.nickname if member else "Unknown")
         
         # Then match card
+        intro_text = f"\n{member.intro}" if member and member.intro else ""
         match_text = get_message(MATCH_FOUND, user=match_user, nickname=member.nickname if member else "Unknown", 
-                               similarity=similarity, common_questions=common_questions, valid_users_count=valid_users_count)
+                               intro=intro_text, similarity=similarity, common_questions=common_questions, valid_users_count=valid_users_count)
         
         # Buttons for accept/decline/block
         kb = types.InlineKeyboardMarkup(inline_keyboard=[

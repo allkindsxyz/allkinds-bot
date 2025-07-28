@@ -62,10 +62,13 @@ MESSAGES = {
         "QUESTION_DELETE": "🗑 Delete",
         # --- Match ---
         "MATCH_NO_VALID": "🤔 No matches yet. Answer a few more to find them!",
-        "MATCH_FOUND": "🎉 <b>{nickname}</b>\nMatch: <b>{similarity}%</b> ({common_questions} questions, from {valid_users_count} people)",
+        "MATCH_FOUND": "🎉 <b>{nickname}</b>{intro}\nMatch: <b>{similarity}%</b> ({common_questions} questions, from {valid_users_count} people)",
         "MATCH_AI_CHEMISTRY": "💬 Start a private chat",
         "MATCH_SHOW_AGAIN": "🔁 Show again later",
         "MATCH_DONT_SHOW": "🚫 Don't show again",
+        "MATCH_PREV": "<<",
+        "MATCH_NEXT": ">>",
+        "MATCH_NOT_ENOUGH_POINTS": "❌ Not enough points to view next match",
         "MATCH_NO_OTHERS": "There are no other participants in the group for matching yet.",
         # --- Match Connection Messages ---
         "MATCH_REQUEST_SENT": "🔔 We've notified {nickname} about your interest. We'll let you know when they make a decision!",
@@ -170,10 +173,13 @@ MESSAGES = {
         "QUESTION_DELETE": "🗑 Удалить",
         # --- Match ---
         "MATCH_NO_VALID": "🤔 Совпадений пока нет. Ответь ещё на несколько вопросов или задай свои!",
-        "MATCH_FOUND": "🎉 <b>{nickname}</b>\nСовпадение: <b>{similarity}%</b> ({common_questions} вопросов, из {valid_users_count} человек)",
+        "MATCH_FOUND": "🎉 <b>{nickname}</b>{intro}\nСовпадение: <b>{similarity}%</b> ({common_questions} вопросов, из {valid_users_count} человек)",
         "MATCH_AI_CHEMISTRY": "💬 Начать приватный чат",
         "MATCH_SHOW_AGAIN": "🔁 Показать позже снова",
         "MATCH_DONT_SHOW": "🚫 Больше не показывать",
+        "MATCH_PREV": "<<",
+        "MATCH_NEXT": ">>",
+        "MATCH_NOT_ENOUGH_POINTS": "❌ Недостаточно поинтов для просмотра следующего мэтча",
         "MATCH_NO_OTHERS": "В группе пока нет других участников для совпадений.",
         # --- Match Connection Messages ---
         "MATCH_REQUEST_SENT": "🔔 Мы уведомили {nickname} о твоём интересе. Мы дадим знать, когда они примут решение!",
@@ -296,6 +302,9 @@ MATCH_FOUND = "MATCH_FOUND"
 MATCH_AI_CHEMISTRY = "MATCH_AI_CHEMISTRY"
 MATCH_SHOW_AGAIN = "MATCH_SHOW_AGAIN"
 MATCH_DONT_SHOW = "MATCH_DONT_SHOW"
+MATCH_PREV = "MATCH_PREV"
+MATCH_NEXT = "MATCH_NEXT"
+MATCH_NOT_ENOUGH_POINTS = "MATCH_NOT_ENOUGH_POINTS"
 MATCH_NO_OTHERS = "MATCH_NO_OTHERS"
 
 # --- Match Connection Messages ---
