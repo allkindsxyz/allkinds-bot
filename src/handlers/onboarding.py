@@ -4,7 +4,7 @@
 from aiogram import types, F, Router
 from aiogram.fsm.context import FSMContext
 from src.loader import bot
-from src.services.onboarding import save_nickname_service, save_photo_service, save_gender_service, save_looking_for_service, save_location_service, is_onboarding_complete_service
+from src.services.onboarding import save_nickname_service, save_photo_service, save_intro_service, save_gender_service, save_looking_for_service, save_location_service, is_onboarding_complete_service
 from src.fsm.states import Onboarding
 from src.db import AsyncSessionLocal
 from src.models import User, Answer, Question
@@ -14,6 +14,7 @@ from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from sqlalchemy import select, and_
 from src.texts.messages import (
     ONBOARDING_NICKNAME_TOO_SHORT, ONBOARDING_INTERNAL_ERROR, ONBOARDING_SEND_PHOTO, ONBOARDING_PHOTO_REQUIRED,
+    ONBOARDING_SEND_INTRO, ONBOARDING_INTRO_TOO_LONG,
     ONBOARDING_SELECT_GENDER, ONBOARDING_SELECT_LOOKING_FOR,
     ONBOARDING_SEND_LOCATION, ONBOARDING_LOCATION_REQUIRED, ONBOARDING_LOCATION_SAVED, ONBOARDING_COMPLETE, ONBOARDING_SOMETHING_WRONG,
     get_message
@@ -61,6 +62,36 @@ async def onboarding_photo(message: types.Message, state: FSMContext):
             await state.clear()
             return
         await save_photo_service(user_id, group_id, file_id)
+    await state.set_state(Onboarding.intro)
+    await message.answer(get_message("ONBOARDING_SEND_INTRO", user or message.from_user))
+
+@router.message(Onboarding.intro)
+async def onboarding_intro(message: types.Message, state: FSMContext):
+    intro_text = message.text.strip() if message.text else ""
+    data = await state.get_data()
+    group_id = data.get("group_id")
+    user_id = data.get("internal_user_id")
+    
+    async with AsyncSessionLocal() as session:
+        user = await session.execute(select(User).where(User.id == user_id))
+        user = user.scalar()
+        
+        if not group_id:
+            await message.answer(get_message("ONBOARDING_INTERNAL_ERROR", user or message.from_user))
+            await state.clear()
+            return
+        
+        # Check if user wants to skip
+        if intro_text.lower() in ['skip', 'пропустить', '']:
+            intro_text = None
+        elif len(intro_text) > 200:
+            await message.answer(get_message("ONBOARDING_INTRO_TOO_LONG", user or message.from_user))
+            return
+        
+        # Save intro (can be None if skipped)
+        if intro_text:
+            await save_intro_service(user_id, group_id, intro_text)
+    
     await state.set_state(Onboarding.gender)
     from src.keyboards.onboarding import get_gender_keyboard
     await message.answer(

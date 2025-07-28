@@ -7,6 +7,8 @@ MESSAGES = {
         "ONBOARDING_INTERNAL_ERROR": "😕 Hmm, something glitched. Hit /start and we'll try again.",
         "ONBOARDING_SEND_PHOTO": "📸 Mind adding any pic for your profile?",
         "ONBOARDING_PHOTO_REQUIRED": "🙌 A photo helps people recognize you—go ahead and send one.",
+        "ONBOARDING_SEND_INTRO": "✍️ Add a short intro about yourself (optional - you can skip by typing 'skip'):",
+        "ONBOARDING_INTRO_TOO_LONG": "📝 Keep it short and sweet! Max 200 characters please.",
         "ONBOARDING_SELECT_GENDER": "👤 Specify your gender:",
         "ONBOARDING_SELECT_LOOKING_FOR": "💕 Who are you looking for?",
         "ONBOARDING_SEND_LOCATION": "📍 Tap below to share your location or type City, Country so we can find folks nearby.",
@@ -113,6 +115,8 @@ MESSAGES = {
         "ONBOARDING_INTERNAL_ERROR": "😕 Хм, что-то глючит. Нажми /start и попробуем снова.",
         "ONBOARDING_SEND_PHOTO": "📸 Добавь любое фото/картинку в профиль?",
         "ONBOARDING_PHOTO_REQUIRED": "🙌 Фото помогает людям узнать тебя — отправь одно.",
+        "ONBOARDING_SEND_INTRO": "✍️ Добавь короткое интро о себе (необязательно - можешь пропустить, написав 'пропустить'):",
+        "ONBOARDING_INTRO_TOO_LONG": "📝 Давай покороче! Максимум 200 символов пожалуйста.",
         "ONBOARDING_SELECT_GENDER": "👤 Укажите ваш пол:",
         "ONBOARDING_SELECT_LOOKING_FOR": "💕 Кого вы ищете?",
         "ONBOARDING_SEND_LOCATION": "📍 Нажми ниже, чтобы поделиться локацией, или введи Город, Страна, чтобы мы нашли людей поблизости.",
@@ -232,6 +236,8 @@ ONBOARDING_NICKNAME_TOO_SHORT = "ONBOARDING_NICKNAME_TOO_SHORT"
 ONBOARDING_INTERNAL_ERROR = "ONBOARDING_INTERNAL_ERROR"
 ONBOARDING_SEND_PHOTO = "ONBOARDING_SEND_PHOTO"
 ONBOARDING_PHOTO_REQUIRED = "ONBOARDING_PHOTO_REQUIRED"
+ONBOARDING_SEND_INTRO = "ONBOARDING_SEND_INTRO"
+ONBOARDING_INTRO_TOO_LONG = "ONBOARDING_INTRO_TOO_LONG"
 ONBOARDING_SELECT_GENDER = "ONBOARDING_SELECT_GENDER"
 ONBOARDING_SELECT_LOOKING_FOR = "ONBOARDING_SELECT_LOOKING_FOR"
 ONBOARDING_SEND_LOCATION = "ONBOARDING_SEND_LOCATION"

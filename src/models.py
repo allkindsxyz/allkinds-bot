@@ -48,6 +48,7 @@ class GroupMember(Base):
     balance = Column(Integer, default=0, nullable=False)
     gender = Column(String(16), nullable=True)  # 'male', 'female'
     looking_for = Column(String(16), nullable=True)  # 'male', 'female', 'all'
+    intro = Column(Text, nullable=True)  # short introduction text
     
     group = relationship('Group', back_populates='members')
     user = relationship('User', back_populates='memberships')

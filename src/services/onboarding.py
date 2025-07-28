@@ -59,6 +59,14 @@ async def save_looking_for_service(user_id: int, group_id: int, looking_for: str
         member.looking_for = looking_for
         await session.commit()
 
+async def save_intro_service(user_id: int, group_id: int, intro: str) -> None:
+    async with AsyncSessionLocal() as session:
+        member = await session.execute(select(GroupMember).where(GroupMember.user_id == user_id, GroupMember.group_id == group_id))
+        member = member.scalar()
+        if member:
+            member.intro = intro
+            await session.commit()
+
 async def save_location_service(user_id: int, group_id: int, lat: float = None, lon: float = None, city: str = None, country: str = None) -> None:
     async with AsyncSessionLocal() as session:
         member = await session.execute(select(GroupMember).where(GroupMember.user_id == user_id, GroupMember.group_id == group_id))
