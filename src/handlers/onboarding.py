@@ -141,11 +141,20 @@ async def onboarding_location(message: types.Message, state: FSMContext):
         if complete:
             await state.clear()
             await state.update_data(internal_user_id=user_id)
-            await message.answer(get_message("ONBOARDING_COMPLETE", user or message.from_user, bonus=WELCOME_BONUS), reply_markup=types.ReplyKeyboardRemove())
+            # Add "Who is vibing" button first, then show completion message
+            from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
+            from src.texts.messages import get_message, BTN_WHO_IS_VIBING
+            from src.constants import POINTS_FOR_MATCH
+            match_kb = ReplyKeyboardMarkup(
+                keyboard=[[KeyboardButton(text=get_message(BTN_WHO_IS_VIBING, user=user, points=POINTS_FOR_MATCH))]],
+                resize_keyboard=True,
+                one_time_keyboard=False
+            )
+            await message.answer(get_message("ONBOARDING_COMPLETE", user or message.from_user, bonus=WELCOME_BONUS), reply_markup=match_kb)
             
-            # Show group welcome with "Who is vibing" button and first question
-            from src.handlers.groups import show_group_welcome_and_question
-            await show_group_welcome_and_question(message, user_id, group_id)
+            # Show first question without welcome message
+            from src.handlers.groups import show_group_main_flow  
+            await show_group_main_flow(message, user_id, group_id)
         else:
             await message.answer(get_message("ONBOARDING_SOMETHING_WRONG", user or message.from_user))
             await state.clear()
