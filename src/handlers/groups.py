@@ -1112,10 +1112,22 @@ async def notify_successful_match_and_exchange_contacts(bot, user1, user2, membe
         await bot.send_message(user1_telegram_id, success_msg1, parse_mode="HTML")
         await bot.send_message(user2_telegram_id, success_msg2, parse_mode="HTML")
         
-        # Note: Real contact exchange would require actual phone numbers
-        # For now, we'll just send the Telegram usernames/IDs as contact info
-        contact_msg1 = f"📞 Контакт: @{user2_telegram_id} ({member2.nickname if member2 else 'Unknown'})"
-        contact_msg2 = f"📞 Контакт: @{user1_telegram_id} ({member1.nickname if member1 else 'Unknown'})"
+        # Get Telegram usernames for both users
+        try:
+            user1_chat = await bot.get_chat(user1_telegram_id)
+            user1_username = user1_chat.username if user1_chat.username else f"id{user1_telegram_id}"
+        except Exception:
+            user1_username = f"id{user1_telegram_id}"
+        
+        try:
+            user2_chat = await bot.get_chat(user2_telegram_id)
+            user2_username = user2_chat.username if user2_chat.username else f"id{user2_telegram_id}"
+        except Exception:
+            user2_username = f"id{user2_telegram_id}"
+        
+        # Send contact information with usernames
+        contact_msg1 = f"📞 Контакт: @{user2_username} ({member2.nickname if member2 else 'Unknown'})"
+        contact_msg2 = f"📞 Контакт: @{user1_username} ({member1.nickname if member1 else 'Unknown'})"
         
         await bot.send_message(user1_telegram_id, contact_msg1, parse_mode="HTML")
         await bot.send_message(user2_telegram_id, contact_msg2, parse_mode="HTML")
