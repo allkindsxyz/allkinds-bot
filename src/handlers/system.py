@@ -13,6 +13,7 @@ from sqlalchemy import select, and_
 from src.models import User, GroupMember, GroupCreator
 from src.keyboards.groups import get_user_keyboard, get_admin_keyboard, get_group_reply_keyboard
 from src.utils.redis import get_internal_user_id, set_telegram_mapping, update_ttl, get_or_restore_internal_user_id
+from src.constants import WELCOME_BONUS
 import os
 
 router = Router()
