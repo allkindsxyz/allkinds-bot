@@ -104,12 +104,9 @@ async def onboarding_looking_for(callback: types.CallbackQuery, state: FSMContex
             return
         await save_looking_for_service(user_id, group_id, looking_for)
     await state.set_state(Onboarding.location)
-    await callback.message.edit_text(
-        get_message("ONBOARDING_SEND_LOCATION", user or callback.from_user),
-        reply_markup=None
-    )
+    await callback.message.delete()
     await callback.message.answer(
-        "📍",
+        get_message("ONBOARDING_SEND_LOCATION", user or callback.from_user),
         reply_markup=types.ReplyKeyboardMarkup(
             keyboard=[[types.KeyboardButton(text=get_message("BTN_SEND_LOCATION", user or callback.from_user), request_location=True)]],
             resize_keyboard=True,
