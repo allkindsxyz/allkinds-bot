@@ -493,19 +493,15 @@ async def process_invite_code(message: types.Message, state: FSMContext):
     if not code or len(code) != 5:
         await message.answer(get_message(GROUPS_JOIN_INVALID_CODE, user=user))
         return
-    group = await join_group_by_code_service(user_id, code)
-    if not group:
-        await message.answer(get_message(GROUPS_JOIN_NOT_FOUND, user=user))
-        return
-    if group.get("needs_onboarding"):
-        await message.answer(get_message(GROUPS_JOIN_ONBOARDING, user=user, group_name=group["name"]), reply_markup=types.ReplyKeyboardRemove())
-        await state.update_data(group_id=group["id"])
-        from src.fsm.states import Onboarding
-        await state.set_state(Onboarding.nickname)
-        return
-    await message.answer(get_message(GROUPS_JOINED, user=user, group_name=group["name"], group_desc=group["description"], bonus=WELCOME_BONUS), reply_markup=go_to_group_keyboard(group["id"], group["name"], user))
-    await state.clear()
-    await state.update_data(internal_user_id=user.id)
+    from src.services.groups import handle_group_join
+    success = await handle_group_join(user_id, code, message, state)
+    if success:
+        # Only clear state if onboarding is not needed (handled by unified function)
+        data = await state.get_data()
+        current_state = await state.get_state()
+        if not current_state:  # No onboarding state set
+            await state.clear()
+            await state.update_data(internal_user_id=user_id)
 
 @router.callback_query(F.data.startswith("find_match_"))
 async def cb_find_match(callback: types.CallbackQuery, state: FSMContext):

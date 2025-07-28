@@ -122,24 +122,10 @@ async def start(message: types.Message, state: FSMContext):
                 args = parts[1]
         if args and len(args) == 5:
             code = args
-            group = await join_group_by_code_service(internal_user_id, code)
-            if not group:
-                await message.answer(get_message("GROUPS_JOIN_NOT_FOUND", user=message.from_user))
+            from src.services.groups import handle_group_join
+            success = await handle_group_join(internal_user_id, code, message, state)
+            if success:
                 return
-            # Always show welcome message first
-            await message.answer(get_message("GROUPS_JOINED", user=message.from_user, group_name=group["name"], group_desc=group["description"], bonus=WELCOME_BONUS), reply_markup=types.ReplyKeyboardRemove())
-            
-            if group.get("needs_onboarding"):
-                await message.answer(get_message("GROUPS_JOIN_ONBOARDING", user=message.from_user, group_name=group["name"]))
-                await state.update_data(group_id=group["id"])
-                from src.fsm.states import Onboarding
-                await state.set_state(Onboarding.nickname)
-                return
-            
-            from src.keyboards.groups import go_to_group_keyboard
-            await state.clear()
-            await state.update_data(internal_user_id=internal_user_id)
-            return
         async with AsyncSessionLocal() as session:
             user = await session.execute(select(User).where(User.id == internal_user_id))
             user = user.scalar()

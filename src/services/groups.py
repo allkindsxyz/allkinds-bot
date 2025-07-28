@@ -8,6 +8,8 @@ from sqlalchemy import select, func
 from src.utils.invite_code import generate_unique_invite_code
 from src.constants import WELCOME_BONUS
 from src.utils.redis import get_or_restore_internal_user_id
+from src.texts.messages import get_message, GROUPS_JOIN_NOT_FOUND, GROUPS_JOINED, GROUPS_JOIN_ONBOARDING
+from aiogram import types
 
 ADMIN_USER_ID = int(os.getenv('ADMIN_USER_ID', 0))
 
@@ -430,3 +432,35 @@ async def set_match_status(user_id: int, group_id: int, match_user_id: int, stat
             obj = MatchStatus(user_id=user.id, group_id=group_id, match_user_id=match_user_id, status=status)
             session.add(obj)
         await session.commit() 
+
+async def handle_group_join(user_id: int, code: str, message, state) -> bool:
+    """
+    Unified function to handle group joining from deeplink or manual code entry.
+    Shows welcome message first, then handles onboarding if needed.
+    Returns True if successful, False if failed.
+    """
+    import logging
+    logging.warning(f"[handle_group_join] user_id={user_id}, code={code}")
+    
+    group = await join_group_by_code_service(user_id, code)
+    if not group:
+        logging.warning(f"[handle_group_join] Group not found for code: {code}")
+        await message.answer(get_message(GROUPS_JOIN_NOT_FOUND, user=message.from_user))
+        return False
+    
+    logging.warning(f"[handle_group_join] Found group: {group['name']}, needs_onboarding: {group.get('needs_onboarding')}")
+    
+    # Always show welcome message first
+    await message.answer(get_message(GROUPS_JOINED, user=message.from_user, group_name=group["name"], group_desc=group["description"], bonus=WELCOME_BONUS), reply_markup=types.ReplyKeyboardRemove())
+    
+    if group.get("needs_onboarding"):
+        await message.answer(get_message(GROUPS_JOIN_ONBOARDING, user=message.from_user, group_name=group["name"]))
+        await state.update_data(group_id=group["id"])
+        from src.fsm.states import Onboarding
+        await state.set_state(Onboarding.nickname)
+        return True
+    
+    # No onboarding needed - complete join
+    await state.clear()
+    await state.update_data(internal_user_id=user_id)
+    return True 
