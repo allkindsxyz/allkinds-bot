@@ -19,6 +19,104 @@ import os
 router = Router()
 print('System router loaded')
 
+async def send_pending_connection_requests(bot, user_id: int):
+    """Отправить все пендинг запросы на подключение пользователю при рестарте"""
+    from src.models import MatchStatus, GroupMember
+    from src.utils.redis import get_telegram_user_id
+    from src.services.groups import find_best_match
+    
+    async with AsyncSessionLocal() as session:
+        user = await session.execute(select(User).where(User.id == user_id))
+        user = user.scalar()
+        if not user or not user.current_group_id:
+            return
+        
+        # Найти все входящие пендинг запросы для этого пользователя
+        pending_requests = await session.execute(select(MatchStatus).where(
+            MatchStatus.match_user_id == user_id,
+            MatchStatus.group_id == user.current_group_id,
+            MatchStatus.status == "pending"
+        ))
+        pending_requests = pending_requests.scalars().all()
+        
+        if not pending_requests:
+            return
+        
+        member = await session.execute(select(GroupMember).where(
+            GroupMember.user_id == user_id, 
+            GroupMember.group_id == user.current_group_id))
+        member = member.scalar()
+        
+        for request in pending_requests:
+            initiator_user = await session.execute(select(User).where(User.id == request.user_id))
+            initiator_user = initiator_user.scalar()
+            initiator_member = await session.execute(select(GroupMember).where(
+                GroupMember.user_id == request.user_id, 
+                GroupMember.group_id == user.current_group_id))
+            initiator_member = initiator_member.scalar()
+            
+            if not initiator_user or not initiator_member:
+                continue
+            
+            # Получить данные мэтча для отображения
+            reverse_match = await find_best_match(user_id, user.current_group_id, exclude_user_ids=[])
+            if reverse_match and reverse_match.get('user_id') == initiator_user.id:
+                similarity = reverse_match['similarity']
+                common_questions = reverse_match['common_questions']
+                valid_users_count = reverse_match['valid_users_count']
+            else:
+                # Fallback значения
+                similarity = 85
+                common_questions = 3
+                valid_users_count = 2
+            
+            try:
+                # Отправить уведомление о запросе
+                request_text = get_message("MATCH_INCOMING_REQUEST", user=user, 
+                                         nickname=initiator_member.nickname if initiator_member else "Unknown")
+                
+                # Карточка мэтча
+                intro_text = f"\n{initiator_member.intro}" if initiator_member and initiator_member.intro else ""
+                match_text = get_message("MATCH_FOUND", user=user, 
+                                       nickname=initiator_member.nickname if initiator_member else "Unknown", 
+                                       intro=intro_text, similarity=similarity, 
+                                       common_questions=common_questions, valid_users_count=valid_users_count)
+                
+                # Кнопки для ответа
+                from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+                kb = InlineKeyboardMarkup(inline_keyboard=[
+                    [
+                        InlineKeyboardButton(text=get_message("BTN_ACCEPT_MATCH", user=user), 
+                                           callback_data=f"accept_match_{initiator_user.id}"),
+                        InlineKeyboardButton(text=get_message("BTN_DECLINE_MATCH", user=user), 
+                                           callback_data=f"decline_match_{initiator_user.id}")
+                    ],
+                    [
+                        InlineKeyboardButton(text=get_message("BTN_BLOCK_MATCH", user=user), 
+                                           callback_data=f"block_match_{initiator_user.id}")
+                    ]
+                ])
+                
+                # Получить Telegram ID пользователя
+                user_telegram_id = await get_telegram_user_id(user_id)
+                if not user_telegram_id:
+                    continue
+                
+                # Отправить уведомление
+                await bot.send_message(user_telegram_id, request_text, parse_mode="HTML")
+                
+                # Отправить карточку мэтча с фото и кнопками
+                if initiator_member and initiator_member.photo_url:
+                    await bot.send_photo(user_telegram_id, initiator_member.photo_url, 
+                                       caption=match_text, reply_markup=kb, parse_mode="HTML")
+                else:
+                    await bot.send_message(user_telegram_id, match_text, 
+                                         reply_markup=kb, parse_mode="HTML")
+                    
+            except Exception as e:
+                import logging
+                logging.error(f"[send_pending_connection_requests] Failed to send request from user_id={initiator_user.id} to user_id={user_id}: {e}")
+
 async def hide_instructions_and_mygroups_by_message(message, state):
     data = await state.get_data()
     msg_id = data.get("instructions_msg_id")
@@ -173,6 +271,9 @@ async def start(message: types.Message, state: FSMContext):
                     if not ans:
                         await send_question_to_user(message.bot, user_obj, q)
                         break
+        
+        # --- PUSH пендинг входящих запросов на подключение ---
+        await send_pending_connection_requests(message.bot, internal_user_id)
         return
     except Exception as e:
         logging.exception("Error in /start handler")
