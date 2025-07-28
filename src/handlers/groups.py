@@ -855,7 +855,7 @@ async def cb_match_chat(callback: types.CallbackQuery, state: FSMContext):
         request_text = get_message(MATCH_INCOMING_REQUEST, user=match_user, nickname=member.nickname if member else "Unknown")
         
         # Then match card
-        intro_text = f"\n{member.bio}" if member and member.bio else ""
+        intro_text = f"\n{member.intro}" if member and member.intro else ""
         match_text = get_message(MATCH_FOUND, user=match_user, nickname=member.nickname if member else "Unknown", 
                                intro=intro_text, similarity=similarity, common_questions=common_questions, valid_users_count=valid_users_count)
         
