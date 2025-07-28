@@ -12,7 +12,7 @@ MESSAGES = {
         "ONBOARDING_SEND_LOCATION": "📍 Tap below to share your location or type City, Country so we can find folks nearby.",
         "ONBOARDING_LOCATION_REQUIRED": "⚡️ We can't match you without location—share it via button or text (e.g. Berlin, Germany).",
         "ONBOARDING_LOCATION_SAVED": "✅ Got it—your location's all set!",
-        "ONBOARDING_COMPLETE": "✅ You are all set! Enjoy your +{bonus}💎 bonus. Good luck in finding good connections.",
+        "ONBOARDING_COMPLETE": "✅ You are all set!\nEnjoy your +{bonus}💎 bonus.\nGood luck in finding good connections.",
         "ONBOARDING_SOMETHING_WRONG": "😕 Uh-oh, something went sideways. Try /start to begin again.",
         # --- Groups ---
         "GROUPS_NOT_IN_ANY": "👀 You haven't joined any groups yet. Want to join one?",
@@ -118,7 +118,7 @@ MESSAGES = {
         "ONBOARDING_SEND_LOCATION": "📍 Нажми ниже, чтобы поделиться локацией, или введи Город, Страна, чтобы мы нашли людей поблизости.",
         "ONBOARDING_LOCATION_REQUIRED": "⚡️ Мы не сможем найти тебе пару без локации — поделись через кнопку или текстом (например, Berlin, Germany).",
         "ONBOARDING_LOCATION_SAVED": "✅ Отлично — твоя локация настроена!",
-        "ONBOARDING_COMPLETE": "✅ Ты готов к работе! Получай свой +{bonus}💎 бонус. Удачи в поиске хороших связей.",
+        "ONBOARDING_COMPLETE": "✅ Ты готов к работе!\nПолучай свой +{bonus}💎 бонус.\nУдачи в поиске хороших связей.",
         "ONBOARDING_SOMETHING_WRONG": "😕 Хм, что-то пошло не так. Попробуй /start, чтобы начать заново.",
         # --- Groups ---
         "GROUPS_NOT_IN_ANY": "👀 Ты ещё не присоединился ни к одной группе. Хочешь присоединиться?",
