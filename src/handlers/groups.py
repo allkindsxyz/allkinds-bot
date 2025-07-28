@@ -526,7 +526,7 @@ async def process_invite_code(message: types.Message, state: FSMContext):
         from src.fsm.states import Onboarding
         await state.set_state(Onboarding.nickname)
         return
-    await message.answer(get_message(GROUPS_JOINED, user=user, group_name=group["name"], bonus=WELCOME_BONUS), reply_markup=go_to_group_keyboard(group["id"], group["name"], user))
+    await message.answer(get_message(GROUPS_JOINED, user=user, group_name=group["name"], group_desc=group["description"], bonus=WELCOME_BONUS), reply_markup=go_to_group_keyboard(group["id"], group["name"], user))
     await state.clear()
     await state.update_data(internal_user_id=user.id)
 

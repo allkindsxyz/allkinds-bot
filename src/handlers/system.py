@@ -133,7 +133,7 @@ async def start(message: types.Message, state: FSMContext):
                 await state.set_state(Onboarding.nickname)
                 return
             from src.keyboards.groups import go_to_group_keyboard
-            await message.answer(get_message("GROUPS_JOINED", user=message.from_user, group_name=group["name"], bonus=WELCOME_BONUS), reply_markup=go_to_group_keyboard(group["id"], group["name"], message.from_user))
+            await message.answer(get_message("GROUPS_JOINED", user=message.from_user, group_name=group["name"], group_desc=group["description"], bonus=WELCOME_BONUS), reply_markup=go_to_group_keyboard(group["id"], group["name"], message.from_user))
             await state.clear()
             await state.update_data(internal_user_id=internal_user_id)
             return

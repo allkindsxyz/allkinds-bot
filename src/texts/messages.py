@@ -7,8 +7,8 @@ MESSAGES = {
         "ONBOARDING_INTERNAL_ERROR": "😕 Hmm, something glitched. Hit /start and we'll try again.",
         "ONBOARDING_SEND_PHOTO": "📸 Mind adding any pic for your profile?",
         "ONBOARDING_PHOTO_REQUIRED": "🙌 A photo helps people recognize you—go ahead and send one.",
-        "ONBOARDING_SELECT_GENDER": "👤 Укажите ваш пол:",
-        "ONBOARDING_SELECT_LOOKING_FOR": "💕 Кого вы ищете?",
+        "ONBOARDING_SELECT_GENDER": "👤 Specify your gender:",
+        "ONBOARDING_SELECT_LOOKING_FOR": "💕 Who are you looking for?",
         "ONBOARDING_SEND_LOCATION": "📍 Tap below to share your location or type City, Country so we can find folks nearby.",
         "ONBOARDING_LOCATION_REQUIRED": "⚡️ We can't match you without location—share it via button or text (e.g. Berlin, Germany).",
         "ONBOARDING_LOCATION_SAVED": "✅ Got it—your location's all set!",
@@ -23,7 +23,7 @@ MESSAGES = {
         "GROUPS_JOIN_INVALID_CODE": "😕 That code didn't work. Enter a 5-char code:",
         "GROUPS_JOIN_NOT_FOUND": "🔍 No group matches that code. Try again?",
         "GROUPS_JOIN_ONBOARDING": "👋 Joining '{group_name}'. What nickname will you use?",
-        "GROUPS_JOINED": "🌟 Welcome aboard '{group_name}'! Enjoy +{bonus}💎.",
+        "GROUPS_JOINED": "🌟 Welcome aboard '{group_name}'!\n{group_desc}\nEnjoy your +{bonus}💎 bonus.",
         "GROUPS_NO_NEW_QUESTIONS": "🤷‍♂️ No new questions yet. Want to ask one?",
         "GROUPS_PROFILE_SETUP": "🔧 Time to personalise—enter your nickname:",
         "GROUPS_REVIEW_ANSWERED": "🔍 Load your answered questions if you want to change them:",
@@ -88,6 +88,11 @@ MESSAGES = {
         "BTN_DELETE": "🗑 Delete",
         "BTN_CANCEL": "❌ Cancel",
         "BTN_SEND_LOCATION": "📍 Share your location",
+        "BTN_GENDER_MALE": "👨 Male",
+        "BTN_GENDER_FEMALE": "👩 Female",
+        "BTN_LOOKING_FOR_MALE": "👨 Male",
+        "BTN_LOOKING_FOR_FEMALE": "👩 Female",
+        "BTN_LOOKING_FOR_ALL": "👥 All",
         "BTN_WHO_IS_VIBING": "🔍 Who's vibing highest right now",
         "BTN_ACCEPT_MATCH": "✅ Accept",
         "BTN_REJECT_MATCH": "❌ Decline",
@@ -107,6 +112,8 @@ MESSAGES = {
         "ONBOARDING_INTERNAL_ERROR": "😕 Хм, что-то глючит. Нажми /start и попробуем снова.",
         "ONBOARDING_SEND_PHOTO": "📸 Добавь любое фото/картинку в профиль?",
         "ONBOARDING_PHOTO_REQUIRED": "🙌 Фото помогает людям узнать тебя — отправь одно.",
+        "ONBOARDING_SELECT_GENDER": "👤 Укажите ваш пол:",
+        "ONBOARDING_SELECT_LOOKING_FOR": "💕 Кого вы ищете?",
         "ONBOARDING_SEND_LOCATION": "📍 Нажми ниже, чтобы поделиться локацией, или введи Город, Страна, чтобы мы нашли людей поблизости.",
         "ONBOARDING_LOCATION_REQUIRED": "⚡️ Мы не сможем найти тебе пару без локации — поделись через кнопку или текстом (например, Berlin, Germany).",
         "ONBOARDING_LOCATION_SAVED": "✅ Отлично — твоя локация настроена!",
@@ -121,7 +128,7 @@ MESSAGES = {
         "GROUPS_JOIN_INVALID_CODE": "😕 Этот код не сработал. Введи 5-символьный код:",
         "GROUPS_JOIN_NOT_FOUND": "🔍 Ни одна группа не соответствует этому коду. Попробовать снова?",
         "GROUPS_JOIN_ONBOARDING": "👋 Присоединяемся к '{group_name}'. Какой никнейм будешь использовать?",
-        "GROUPS_JOINED": "🌟 Добро пожаловать на борт '{group_name}'! Получай +{bonus}💎.",
+        "GROUPS_JOINED": "🌟 Добро пожаловать на борт '{group_name}'!\n{group_desc}\nПолучай свой +{bonus}💎 бонус.",
         "GROUPS_NO_NEW_QUESTIONS": "🤷‍♂️ Новых вопросов пока нет. Хочешь задать один?",
         "GROUPS_PROFILE_SETUP": "🔧 Введи какой-нибудь никнейм:",
         "GROUPS_REVIEW_ANSWERED": "🔍 Загрузи свои отвеченные вопросы, если хочешь изменить ответы:",
@@ -188,6 +195,11 @@ MESSAGES = {
         "BTN_DELETE": "🗑 Удалить",
         "BTN_CANCEL": "❌ Отмена",
         "BTN_SEND_LOCATION": "📍 Поделиться своей локацией",
+        "BTN_GENDER_MALE": "👨 Мужчина",
+        "BTN_GENDER_FEMALE": "👩 Женщина",
+        "BTN_LOOKING_FOR_MALE": "👨 Мужчину",
+        "BTN_LOOKING_FOR_FEMALE": "👩 Женщину",
+        "BTN_LOOKING_FOR_ALL": "👥 Всех",
         "BTN_WHO_IS_VIBING": "🔍 Кто сейчас резонирует больше всех",
         "BTN_ACCEPT_MATCH": "✅ Принять",
         "BTN_REJECT_MATCH": "❌ Отклонить",
@@ -296,6 +308,11 @@ BTN_LEAVE_GROUP = "BTN_LEAVE_GROUP"
 BTN_DELETE = "BTN_DELETE"
 BTN_CANCEL = "BTN_CANCEL"
 BTN_SEND_LOCATION = "BTN_SEND_LOCATION"
+BTN_GENDER_MALE = "BTN_GENDER_MALE"
+BTN_GENDER_FEMALE = "BTN_GENDER_FEMALE"
+BTN_LOOKING_FOR_MALE = "BTN_LOOKING_FOR_MALE"
+BTN_LOOKING_FOR_FEMALE = "BTN_LOOKING_FOR_FEMALE"
+BTN_LOOKING_FOR_ALL = "BTN_LOOKING_FOR_ALL"
 BTN_WHO_IS_VIBING = "BTN_WHO_IS_VIBING"
 BTN_ACCEPT_MATCH = "BTN_ACCEPT_MATCH"
 BTN_REJECT_MATCH = "BTN_REJECT_MATCH"

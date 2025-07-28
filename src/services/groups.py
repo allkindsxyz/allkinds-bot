@@ -219,8 +219,8 @@ async def join_group_by_code_service(user_id: int, code: str) -> dict | None:
             await session.commit()
             onboarded = await is_onboarded(user_id, group.id)
             if not onboarded:
-                return {"id": group.id, "name": group.name, "needs_onboarding": True}
-        return {"id": group.id, "name": group.name, "needs_onboarding": False}
+                return {"id": group.id, "name": group.name, "description": group.description, "needs_onboarding": True}
+        return {"id": group.id, "name": group.name, "description": group.description, "needs_onboarding": False}
 
 async def switch_group_service(user_id: int, group_id: int) -> dict:
     """Сменить текущую группу пользователя. Вернуть статус и данные группы."""
@@ -269,6 +269,19 @@ async def leave_group_service(user_id: int, group_id: int) -> dict:
     async with AsyncSessionLocal() as session:
         user = await session.execute(select(User).where(User.id == user_id))
         user = user.scalar()
+        
+        # Delete all user's answers for questions in this group
+        questions_in_group = await session.execute(select(Question.id).where(Question.group_id == group_id))
+        question_ids = [q[0] for q in questions_in_group.all()]
+        if question_ids:
+            await session.execute(
+                Answer.__table__.delete().where(
+                    Answer.user_id == user.id,
+                    Answer.question_id.in_(question_ids)
+                )
+            )
+        
+        # Delete group membership
         await session.execute(
             GroupMember.__table__.delete().where(GroupMember.user_id == user.id, GroupMember.group_id == group_id)
         )
