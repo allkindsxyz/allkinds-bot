@@ -37,6 +37,28 @@ async def save_photo_service(user_id: int, group_id: int, photo_url: str) -> Non
         member.photo_url = photo_url
         await session.commit()
 
+async def save_gender_service(user_id: int, group_id: int, gender: str) -> None:
+    """Save user's gender."""
+    async with AsyncSessionLocal() as session:
+        member = await session.execute(select(GroupMember).where(GroupMember.user_id == user_id, GroupMember.group_id == group_id))
+        member = member.scalar()
+        if not member:
+            print(f"[save_gender_service] ERROR: member not found for user_id={user_id}, group_id={group_id}")
+            return
+        member.gender = gender
+        await session.commit()
+
+async def save_looking_for_service(user_id: int, group_id: int, looking_for: str) -> None:
+    """Save user's looking_for preference."""
+    async with AsyncSessionLocal() as session:
+        member = await session.execute(select(GroupMember).where(GroupMember.user_id == user_id, GroupMember.group_id == group_id))
+        member = member.scalar()
+        if not member:
+            print(f"[save_looking_for_service] ERROR: member not found for user_id={user_id}, group_id={group_id}")
+            return
+        member.looking_for = looking_for
+        await session.commit()
+
 async def save_location_service(user_id: int, group_id: int, lat: float = None, lon: float = None, city: str = None, country: str = None) -> None:
     async with AsyncSessionLocal() as session:
         member = await session.execute(select(GroupMember).where(GroupMember.user_id == user_id, GroupMember.group_id == group_id))
@@ -60,8 +82,8 @@ async def is_onboarding_complete_service(user_id: int, group_id: int) -> bool:
         member = member.scalar()
         print(f"[is_onboarding_complete_service] member: {member}")
         if member:
-            print(f"[is_onboarding_complete_service] nickname: {member.nickname}, photo_url: {member.photo_url}, lat: {member.geolocation_lat}, city: {member.city}")
-        result = bool(member and member.nickname and member.photo_url and (member.geolocation_lat is not None or member.city))
+            print(f"[is_onboarding_complete_service] nickname: {member.nickname}, photo_url: {member.photo_url}, gender: {member.gender}, looking_for: {member.looking_for}, lat: {member.geolocation_lat}, city: {member.city}")
+        result = bool(member and member.nickname and member.photo_url and member.gender and member.looking_for and (member.geolocation_lat is not None or member.city))
         print(f"[is_onboarding_complete_service] result: {result}")
         if result:
             user = await session.execute(select(User).where(User.id == user_id))

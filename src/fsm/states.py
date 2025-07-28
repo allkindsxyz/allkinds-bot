@@ -7,6 +7,8 @@ class CreateGroup(StatesGroup):
 class Onboarding(StatesGroup):
     nickname = State()
     photo = State()
+    gender = State()
+    looking_for = State()
     location = State()
 
 class JoinGroup(StatesGroup):

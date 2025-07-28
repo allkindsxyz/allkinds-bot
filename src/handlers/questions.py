@@ -503,7 +503,7 @@ async def update_badge_for_new_question(bot, user, new_question):
         telegram_user_id = await get_telegram_user_id(user.id)
         if not telegram_user_id:
             return
-        try:
+            try:
             if unanswered == 1:
                 # Это был первый неотвеченный — пушим новый вопрос
                 await send_question_to_user(bot, user, new_question)
@@ -543,7 +543,7 @@ async def update_badge_after_answer(bot, user, group_id):
                 # await bot.send_message(telegram_user_id, badge_text)
                 logging.info(f"[update_badge_after_answer] Updated badge for user {user.id}: {unanswered} unanswered")
         except Exception as e:
-            logging.error(f"[update_badge_after_answer] Failed to update badge: {e}")
+            logging.error(f"[update_badge_after_answer] Failed to update badge: {e}") 
 
 async def cleanup_old_delivered_answers():
     """Удалить все старые delivered Answer без value (устаревшие очереди)."""

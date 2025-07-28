@@ -4,7 +4,7 @@
 from aiogram import types, F, Router
 from aiogram.fsm.context import FSMContext
 from src.loader import bot
-from src.services.onboarding import save_nickname_service, save_photo_service, save_location_service, is_onboarding_complete_service
+from src.services.onboarding import save_nickname_service, save_photo_service, save_gender_service, save_looking_for_service, save_location_service, is_onboarding_complete_service
 from src.fsm.states import Onboarding
 from src.db import AsyncSessionLocal
 from src.models import User, Answer, Question
@@ -14,6 +14,7 @@ from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from sqlalchemy import select, and_
 from src.texts.messages import (
     ONBOARDING_NICKNAME_TOO_SHORT, ONBOARDING_INTERNAL_ERROR, ONBOARDING_SEND_PHOTO, ONBOARDING_PHOTO_REQUIRED,
+    ONBOARDING_SELECT_GENDER, ONBOARDING_SELECT_LOOKING_FOR,
     ONBOARDING_SEND_LOCATION, ONBOARDING_LOCATION_REQUIRED, ONBOARDING_LOCATION_SAVED, ONBOARDING_SOMETHING_WRONG,
     get_message
 )
@@ -59,11 +60,57 @@ async def onboarding_photo(message: types.Message, state: FSMContext):
             await state.clear()
             return
         await save_photo_service(user_id, group_id, file_id)
-    await state.set_state(Onboarding.location)
+    await state.set_state(Onboarding.gender)
+    from src.keyboards.onboarding import get_gender_keyboard
     await message.answer(
-        get_message("ONBOARDING_SEND_LOCATION", user or message.from_user),
+        get_message("ONBOARDING_SELECT_GENDER", user or message.from_user),
+        reply_markup=get_gender_keyboard(user or message.from_user)
+    )
+
+@router.callback_query(F.data.startswith("gender_"), Onboarding.gender)
+async def onboarding_gender(callback: types.CallbackQuery, state: FSMContext):
+    gender = callback.data.split("_")[1]  # male or female
+    data = await state.get_data()
+    group_id = data.get("group_id")
+    user_id = data.get("internal_user_id")
+    async with AsyncSessionLocal() as session:
+        user = await session.execute(select(User).where(User.id == user_id))
+        user = user.scalar()
+        if not group_id:
+            await callback.message.answer(get_message("ONBOARDING_INTERNAL_ERROR", user or callback.from_user))
+            await state.clear()
+            return
+        await save_gender_service(user_id, group_id, gender)
+    await state.set_state(Onboarding.looking_for)
+    from src.keyboards.onboarding import get_looking_for_keyboard
+    await callback.message.edit_text(
+        get_message("ONBOARDING_SELECT_LOOKING_FOR", user or callback.from_user),
+        reply_markup=get_looking_for_keyboard(user or callback.from_user)
+    )
+
+@router.callback_query(F.data.startswith("looking_for_"), Onboarding.looking_for)
+async def onboarding_looking_for(callback: types.CallbackQuery, state: FSMContext):
+    looking_for = callback.data.split("_", 2)[2]  # male, female, or all
+    data = await state.get_data()
+    group_id = data.get("group_id")
+    user_id = data.get("internal_user_id")
+    async with AsyncSessionLocal() as session:
+        user = await session.execute(select(User).where(User.id == user_id))
+        user = user.scalar()
+        if not group_id:
+            await callback.message.answer(get_message("ONBOARDING_INTERNAL_ERROR", user or callback.from_user))
+            await state.clear()
+            return
+        await save_looking_for_service(user_id, group_id, looking_for)
+    await state.set_state(Onboarding.location)
+    await callback.message.edit_text(
+        get_message("ONBOARDING_SEND_LOCATION", user or callback.from_user),
+        reply_markup=None
+    )
+    await callback.message.answer(
+        "",
         reply_markup=types.ReplyKeyboardMarkup(
-            keyboard=[[types.KeyboardButton(text=get_message("BTN_SEND_LOCATION", user or message.from_user), request_location=True)]],
+            keyboard=[[types.KeyboardButton(text=get_message("BTN_SEND_LOCATION", user or callback.from_user), request_location=True)]],
             resize_keyboard=True,
             one_time_keyboard=True
         )

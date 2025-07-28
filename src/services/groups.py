@@ -310,11 +310,39 @@ async def find_best_match(user_id: int, group_id: int, exclude_user_ids: list[in
         user_answers = {row[0]: row[1] for row in user_answers.all()}
         if not user_answers:
             return None
-        # Get all other group members
+        # Get current user's member info for gender filtering
+        current_member = await session.execute(select(GroupMember).where(GroupMember.user_id == user.id, GroupMember.group_id == group_id))
+        current_member = current_member.scalar()
+        if not current_member or not current_member.gender or not current_member.looking_for:
+            return None
+        
+        # Get all other group members with gender filtering
         members = await session.execute(select(GroupMember).where(GroupMember.group_id == group_id, GroupMember.user_id != user.id))
         members = members.scalars().all()
         if not members:
             return None
+        
+        # Filter members by gender preferences
+        filtered_members = []
+        for member in members:
+            # Skip members without gender info
+            if not member.gender or not member.looking_for:
+                continue
+            
+            # Check if current user is looking for this member's gender
+            if current_member.looking_for != 'all' and current_member.looking_for != member.gender:
+                continue
+            
+            # Check if this member is looking for current user's gender
+            if member.looking_for != 'all' and member.looking_for != current_member.gender:
+                continue
+            
+            filtered_members.append(member)
+        
+        if not filtered_members:
+            return None
+        
+        members = filtered_members
         # Count valid users for match
         valid_users_count = 0
         best_match = None

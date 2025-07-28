@@ -46,6 +46,8 @@ class GroupMember(Base):
     role = Column(String(32), default='member')
     joined_at = Column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
     balance = Column(Integer, default=0, nullable=False)
+    gender = Column(String(16), nullable=True)  # 'male', 'female'
+    looking_for = Column(String(16), nullable=True)  # 'male', 'female', 'all'
     
     group = relationship('Group', back_populates='members')
     user = relationship('User', back_populates='memberships')
