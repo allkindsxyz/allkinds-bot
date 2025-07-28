@@ -114,15 +114,7 @@ async def show_group_main_flow(message, user_id, group_id):
     async with AsyncSessionLocal() as session:
         user = await session.execute(select(User).where(User.id == user_id))
         user = user.scalar()
-        # --- ADDED: create delivered-Answer for all new questions ---
-        questions = await session.execute(select(Question).where(Question.group_id == group_id, Question.is_deleted == 0))
-        questions = questions.scalars().all()
-        for question in questions:
-            ans = await session.execute(select(Answer).where(and_(Answer.question_id == question.id, Answer.user_id == user.id)))
-            ans = ans.scalar()
-            if not ans:
-                session.add(Answer(question_id=question.id, user_id=user.id, status='delivered'))
-        await session.commit()
+        # No longer creating delivered answers - using dynamic queue
         
         # Count answers for history button
         answers_count = await session.execute(
@@ -134,34 +126,15 @@ async def show_group_main_flow(message, user_id, group_id):
         )
         answers_count = len(answers_count.scalars().all())
         
-        # Get all unanswered questions
-        unanswered = await session.execute(
-            select(Answer, Question).join(Question, Answer.question_id == Question.id)
-            .where(
-                Answer.user_id == user.id,
-                Answer.status == 'delivered',
-                Answer.value.is_(None),
-                Question.group_id == group_id,
-                Question.is_deleted == 0
-            )
-            .order_by(Question.created_at)
-        )
-        unanswered = unanswered.all()
-        
         # 2. Load answered questions button (if there's something to load)
         if answers_count > 0:
             kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text=get_message(QUESTION_LOAD_ANSWERED, user=user), callback_data="load_answered_questions")]])
             await message.answer(get_message(GROUPS_REVIEW_ANSWERED, user=user), reply_markup=kb)
         
-        # 3. Unanswered questions counter with proper formatting
-        if unanswered:
-            count = len(unanswered)
-            await message.answer(get_message("UNANSWERED_QUESTIONS_MSG", user=user, count=count), parse_mode="HTML")
-            
-            # 4. First unanswered question is shown immediately
-            ans, question = unanswered[0]
-            if ans.status == 'delivered' and ans.value is None:
-                await send_question_to_user(message.bot, user, question)
+        # 3. Find and show first unanswered question using dynamic queue
+        first_question = await get_next_unanswered_question(session, group_id, user.id)
+        if first_question:
+            await send_question_to_user(message.bot, user, first_question)
         else:
             await message.answer(get_message("GROUPS_NO_NEW_QUESTIONS", user=user))
 
@@ -169,6 +142,10 @@ async def show_group_welcome_and_question(message, user_id, group_id):
     """
     Welcome message when entering group: shows greeting, balance, match button (ReplyKeyboard), then history/questions.
     """
+    # Clean up old delivered answers first
+    from src.handlers.questions import cleanup_old_delivered_answers
+    await cleanup_old_delivered_answers()
+    
     from src.keyboards.groups import get_group_reply_keyboard
     from src.services.groups import get_group_balance, get_user_groups
     from src.texts.messages import get_message, GROUPS_FIND_MATCH

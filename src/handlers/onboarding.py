@@ -141,19 +141,6 @@ async def onboarding_location(message: types.Message, state: FSMContext):
             return
         complete = await is_onboarding_complete_service(user_id, group_id)
         if complete:
-            # Create delivered answers for all existing questions in the group
-            questions = await session.execute(select(Question).where(Question.group_id == group_id, Question.is_deleted == 0))
-            questions = questions.scalars().all()
-            for question in questions:
-                ans = await session.execute(select(Answer).where(and_(Answer.question_id == question.id, Answer.user_id == user_id)))
-                ans = ans.scalar()
-                if not ans:
-                    session.add(Answer(question_id=question.id, user_id=user_id, status='delivered'))
-            await session.commit()
-            
-            # Update badge with count of unanswered questions
-            await update_badge_after_answer(message.bot, user, group_id)
-            
             await state.clear()
             await state.update_data(internal_user_id=user_id)
             await message.answer(get_message("ONBOARDING_LOCATION_SAVED", user or message.from_user))

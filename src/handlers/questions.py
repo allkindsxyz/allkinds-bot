@@ -158,7 +158,7 @@ async def cb_answer_question(callback: types.CallbackQuery, state: FSMContext):
         next_q = await get_next_unanswered_question(session, question.group_id, user.id)
         if next_q:
             logging.warning(f"[cb_answer_question] Push next unanswered: user_id={user.id}, question_id={next_q.id}")
-            await send_question_to_user(callback.bot, user, next_q, creator_user_id, question.group_id)
+            await send_question_to_user(callback.bot, user, next_q)
         else:
             logging.warning(f"[cb_answer_question] No more unanswered for user_id={user.id}")
         # Update badge after answer (always)
