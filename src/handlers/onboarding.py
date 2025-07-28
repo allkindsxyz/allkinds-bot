@@ -144,7 +144,7 @@ async def onboarding_location(message: types.Message, state: FSMContext):
         if complete:
             await state.clear()
             await state.update_data(internal_user_id=user_id)
-            await message.answer(get_message("ONBOARDING_COMPLETE", user or message.from_user, bonus=WELCOME_BONUS))
+            await message.answer(get_message("ONBOARDING_COMPLETE", user or message.from_user, bonus=WELCOME_BONUS), reply_markup=types.ReplyKeyboardRemove())
             
             # Show first question directly without welcome (already shown)
             async with AsyncSessionLocal() as session:
