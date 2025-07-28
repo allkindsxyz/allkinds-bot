@@ -605,8 +605,12 @@ async def show_match_with_navigation(callback_or_message, user, matches: list, i
         
         if match['photo_url']:
             if callback_or_message.message.photo:
-                # Edit existing photo message
-                await callback_or_message.message.edit_caption(caption=text, reply_markup=kb, parse_mode="HTML")
+                # Check if it's the same photo URL - if not, delete and send new
+                current_photo_file_id = callback_or_message.message.photo[-1].file_id
+                
+                # For navigation, always delete and send new photo to ensure photo updates
+                await callback_or_message.message.delete()
+                await callback_or_message.message.answer_photo(match['photo_url'], caption=text, reply_markup=kb, parse_mode="HTML")
             else:
                 # Delete text message and send photo
                 await callback_or_message.message.delete()
