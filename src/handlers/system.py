@@ -126,14 +126,17 @@ async def start(message: types.Message, state: FSMContext):
             if not group:
                 await message.answer(get_message("GROUPS_JOIN_NOT_FOUND", user=message.from_user))
                 return
+            # Always show welcome message first
+            await message.answer(get_message("GROUPS_JOINED", user=message.from_user, group_name=group["name"], group_desc=group["description"], bonus=WELCOME_BONUS), reply_markup=types.ReplyKeyboardRemove())
+            
             if group.get("needs_onboarding"):
-                await message.answer(get_message("GROUPS_JOIN_ONBOARDING", user=message.from_user, group_name=group["name"]), reply_markup=types.ReplyKeyboardRemove())
+                await message.answer(get_message("GROUPS_JOIN_ONBOARDING", user=message.from_user, group_name=group["name"]))
                 await state.update_data(group_id=group["id"])
                 from src.fsm.states import Onboarding
                 await state.set_state(Onboarding.nickname)
                 return
+            
             from src.keyboards.groups import go_to_group_keyboard
-            await message.answer(get_message("GROUPS_JOINED", user=message.from_user, group_name=group["name"], group_desc=group["description"], bonus=WELCOME_BONUS), reply_markup=go_to_group_keyboard(group["id"], group["name"], message.from_user))
             await state.clear()
             await state.update_data(internal_user_id=internal_user_id)
             return

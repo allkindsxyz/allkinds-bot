@@ -141,19 +141,30 @@ async def cb_answer_question(callback: types.CallbackQuery, state: FSMContext):
             await show_question_with_all_buttons(callback, question, user, creator_user_id)
             await callback.answer(get_message(QUESTION_CAN_CHANGE_ANSWER, user=user))
             return
+        is_new_answer = not ans
         if not ans:
             ans = Answer(question_id=qid, user_id=user.id, status='answered', value=value)
             session.add(ans)
-        else:
-            ans.value = value
-            ans.status = 'answered'
+            # Award points for new answer
             member = await session.execute(select(GroupMember).where(GroupMember.user_id == user.id, GroupMember.group_id == question.group_id))
             member = member.scalar()
             if member:
                 member.balance += POINTS_FOR_ANSWER
+        else:
+            ans.value = value
+            ans.status = 'answered'
         await session.commit()
+        
+        # Get updated balance
+        updated_member = await session.execute(select(GroupMember).where(GroupMember.user_id == user.id, GroupMember.group_id == question.group_id))
+        updated_member = updated_member.scalar()
+        balance = updated_member.balance if updated_member else 0
+        
         await show_question_with_selected_button(callback, question, user, value, creator_user_id)
-        await callback.answer(get_message(QUESTION_ANSWER_SAVED, user=user))
+        if is_new_answer:
+            await callback.answer(f"💎 Balance: {balance} (+{POINTS_FOR_ANSWER})")
+        else:
+            await callback.answer(f"💎 Balance: {balance} (updated)")
         # Пушим следующий неотвеченный вопрос, если есть (через сервис)
         next_q = await get_next_unanswered_question(session, question.group_id, user.id)
         if next_q:

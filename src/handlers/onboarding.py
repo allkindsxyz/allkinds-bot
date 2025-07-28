@@ -15,7 +15,7 @@ from sqlalchemy import select, and_
 from src.texts.messages import (
     ONBOARDING_NICKNAME_TOO_SHORT, ONBOARDING_INTERNAL_ERROR, ONBOARDING_SEND_PHOTO, ONBOARDING_PHOTO_REQUIRED,
     ONBOARDING_SELECT_GENDER, ONBOARDING_SELECT_LOOKING_FOR,
-    ONBOARDING_SEND_LOCATION, ONBOARDING_LOCATION_REQUIRED, ONBOARDING_LOCATION_SAVED, ONBOARDING_SOMETHING_WRONG,
+    ONBOARDING_SEND_LOCATION, ONBOARDING_LOCATION_REQUIRED, ONBOARDING_LOCATION_SAVED, ONBOARDING_COMPLETE, ONBOARDING_SOMETHING_WRONG,
     get_message
 )
 
@@ -108,7 +108,7 @@ async def onboarding_looking_for(callback: types.CallbackQuery, state: FSMContex
         reply_markup=None
     )
     await callback.message.answer(
-        "",
+        get_message("ONBOARDING_SEND_LOCATION", user or callback.from_user),
         reply_markup=types.ReplyKeyboardMarkup(
             keyboard=[[types.KeyboardButton(text=get_message("BTN_SEND_LOCATION", user or callback.from_user), request_location=True)]],
             resize_keyboard=True,
@@ -143,9 +143,16 @@ async def onboarding_location(message: types.Message, state: FSMContext):
         if complete:
             await state.clear()
             await state.update_data(internal_user_id=user_id)
-            await message.answer(get_message("ONBOARDING_LOCATION_SAVED", user or message.from_user))
-            from src.handlers.groups import show_group_welcome_and_question
-            await show_group_welcome_and_question(message, user_id, group_id)
+            await message.answer(get_message("ONBOARDING_COMPLETE", user or message.from_user))
+            
+            # Show first question directly without welcome (already shown)
+            async with AsyncSessionLocal() as session:
+                first_question = await get_next_unanswered_question(session, group_id, user_id)
+                if first_question:
+                    await send_question_to_user(message.bot, user, first_question)
+                else:
+                    from src.texts.messages import GROUPS_NO_NEW_QUESTIONS
+                    await message.answer(get_message(GROUPS_NO_NEW_QUESTIONS, user=user))
         else:
             await message.answer(get_message("ONBOARDING_SOMETHING_WRONG", user or message.from_user))
             await state.clear()
