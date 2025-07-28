@@ -18,6 +18,7 @@ from src.texts.messages import (
     ONBOARDING_SEND_LOCATION, ONBOARDING_LOCATION_REQUIRED, ONBOARDING_LOCATION_SAVED, ONBOARDING_COMPLETE, ONBOARDING_SOMETHING_WRONG,
     get_message
 )
+from src.constants import WELCOME_BONUS
 
 router = Router()
 
@@ -143,7 +144,7 @@ async def onboarding_location(message: types.Message, state: FSMContext):
         if complete:
             await state.clear()
             await state.update_data(internal_user_id=user_id)
-            await message.answer(get_message("ONBOARDING_COMPLETE", user or message.from_user))
+            await message.answer(get_message("ONBOARDING_COMPLETE", user or message.from_user, bonus=WELCOME_BONUS))
             
             # Show first question directly without welcome (already shown)
             async with AsyncSessionLocal() as session:

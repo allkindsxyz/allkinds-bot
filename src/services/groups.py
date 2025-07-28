@@ -451,10 +451,10 @@ async def handle_group_join(user_id: int, code: str, message, state) -> bool:
     logging.warning(f"[handle_group_join] Found group: {group['name']}, needs_onboarding: {group.get('needs_onboarding')}")
     
     # Always show welcome message first
-    await message.answer(get_message(GROUPS_JOINED, user=message.from_user, group_name=group["name"], group_desc=group["description"], bonus=WELCOME_BONUS), reply_markup=types.ReplyKeyboardRemove())
+    await message.answer(get_message(GROUPS_JOINED, user=message.from_user, group_name=group["name"], group_desc=group["description"]), reply_markup=types.ReplyKeyboardRemove())
     
     if group.get("needs_onboarding"):
-        await message.answer(get_message(GROUPS_JOIN_ONBOARDING, user=message.from_user, group_name=group["name"]))
+        await message.answer(get_message(GROUPS_JOIN_ONBOARDING, user=message.from_user))
         await state.update_data(group_id=group["id"])
         from src.fsm.states import Onboarding
         await state.set_state(Onboarding.nickname)
