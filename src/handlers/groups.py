@@ -961,10 +961,10 @@ async def cb_connect(callback: types.CallbackQuery, state: FSMContext):
             existing_match = existing_match.scalar()
             
             if not existing_match:
-                new_match = Match(user1_id=user1_id, user2_id=user2_id, group_id=group_id, status="exchanged_contacts")
+                new_match = Match(user1_id=user1_id, user2_id=user2_id, group_id=group_id, status="contacts")
                 session.add(new_match)
             else:
-                existing_match.status = "exchanged_contacts"
+                existing_match.status = "contacts"
             
             await session.commit()
             
@@ -1181,10 +1181,10 @@ async def cb_accept_match(callback: types.CallbackQuery, state: FSMContext):
         existing_match = existing_match.scalar()
         
         if not existing_match:
-            new_match = Match(user1_id=user1_id, user2_id=user2_id, group_id=group_id, status="exchanged_contacts")
+            new_match = Match(user1_id=user1_id, user2_id=user2_id, group_id=group_id, status="contacts")
             session.add(new_match)
         else:
-            existing_match.status = "exchanged_contacts"
+            existing_match.status = "contacts"
         
         await session.commit()
     

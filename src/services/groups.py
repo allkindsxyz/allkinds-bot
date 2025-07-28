@@ -315,11 +315,11 @@ async def find_best_match(user_id: int, group_id: int, exclude_user_ids: list[in
             if status in ("hidden", "postponed", "pending", "accepted", "declined", "blocked"):
                 exclude_user_ids.append(match_user_id)
         
-        # Also exclude users with exchanged_contacts status in Match table
+        # Also exclude users with contacts status in Match table
         from src.models import Match
         exchanged_matches = await session.execute(select(Match).where(
             Match.group_id == group_id,
-            Match.status == "exchanged_contacts",
+            Match.status == "contacts",
             ((Match.user1_id == user.id) | (Match.user2_id == user.id))
         ))
         for match in exchanged_matches.scalars().all():
@@ -441,11 +441,11 @@ async def find_all_matches(user_id: int, group_id: int, exclude_user_ids: list[i
             if status in ("hidden", "postponed", "pending", "accepted", "declined", "blocked"):
                 exclude_user_ids.append(match_user_id)
         
-        # Also exclude users with exchanged_contacts status in Match table
+        # Also exclude users with contacts status in Match table
         from src.models import Match
         exchanged_matches = await session.execute(select(Match).where(
             Match.group_id == group_id,
-            Match.status == "exchanged_contacts",
+            Match.status == "contacts",
             ((Match.user1_id == user.id) | (Match.user2_id == user.id))
         ))
         for match in exchanged_matches.scalars().all():
