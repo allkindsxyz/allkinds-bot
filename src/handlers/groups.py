@@ -590,7 +590,8 @@ async def show_match_with_navigation(callback_or_message, user, matches: list, i
     
     kb = types.InlineKeyboardMarkup(inline_keyboard=[
         *nav_buttons,
-        [types.InlineKeyboardButton(text=get_message(MATCH_AI_CHEMISTRY, user=user, points=POINTS_TO_CONNECT), callback_data=f"match_chat_{match['user_id']}")],
+        # [types.InlineKeyboardButton(text=get_message(MATCH_AI_CHEMISTRY, user=user, points=POINTS_TO_CONNECT), callback_data=f"match_chat_{match['user_id']}")],  # Commented out - will return later
+        [types.InlineKeyboardButton(text=get_message("BTN_CONNECT", user=user), callback_data=f"connect_{match['user_id']}")],
         [types.InlineKeyboardButton(text=get_message(MATCH_SHOW_AGAIN, user=user), callback_data=f"match_postpone_{match['user_id']}")],
         [types.InlineKeyboardButton(text=get_message(MATCH_DONT_SHOW, user=user), callback_data=f"match_hide_{match['user_id']}")]
     ])
@@ -893,11 +894,236 @@ async def cb_match_chat(callback: types.CallbackQuery, state: FSMContext):
     
     await callback.answer()
 
+@router.callback_query(F.data.startswith("connect_"))
+async def cb_connect(callback: types.CallbackQuery, state: FSMContext):
+    """Инициировать запрос на подключение к матчу (новая упрощенная логика)"""
+    from src.utils.redis import get_or_restore_internal_user_id, get_telegram_user_id
+    from src.services.groups import find_best_match
+    
+    internal_user_id = await get_or_restore_internal_user_id(state, callback.from_user.id)
+    if not internal_user_id:
+        await callback.message.answer(get_message("Please start the bot to use this feature.", user=callback.from_user))
+        await callback.answer()
+        return
+    
+    match_user_id = int(callback.data.split("_")[-1])
+    from src.models import MatchStatus, GroupMember, Match
+    
+    async with AsyncSessionLocal() as session:
+        user = await session.execute(select(User).where(User.id == internal_user_id))
+        user = user.scalar()
+        group_id = user.current_group_id if user else None
+        
+        if not user or not group_id:
+            await callback.message.answer(get_message("Please start the bot to use this feature.", user=callback.from_user))
+            await callback.answer()
+            return
+        
+        member = await session.execute(select(GroupMember).where(GroupMember.user_id == user.id, GroupMember.group_id == group_id))
+        member = member.scalar()
+        match_user = await session.execute(select(User).where(User.id == match_user_id))
+        match_user = match_user.scalar()
+        match_member = await session.execute(select(GroupMember).where(GroupMember.user_id == match_user_id, GroupMember.group_id == group_id))
+        match_member = match_member.scalar()
+        
+        if not match_user or not match_member:
+            await callback.answer("User not found")
+            return
+        
+        # Check if there's already a reverse pending request (mutual initiative logic)
+        reverse_request = await session.execute(select(MatchStatus).where(
+            MatchStatus.user_id == match_user.id,
+            MatchStatus.group_id == group_id,
+            MatchStatus.match_user_id == user.id,
+            MatchStatus.status == "pending"
+        ))
+        reverse_request = reverse_request.scalar()
+        
+        if reverse_request:
+            # Mutual initiative - automatic match!
+            # Update reverse request to accepted
+            reverse_request.status = "accepted"
+            
+            # Create Match record with exchanged_contacts status
+            # Use consistent user ordering (smaller id first)
+            user1_id = min(user.id, match_user.id)
+            user2_id = max(user.id, match_user.id)
+            
+            existing_match = await session.execute(select(Match).where(
+                Match.user1_id == user1_id,
+                Match.user2_id == user2_id,
+                Match.group_id == group_id
+            ))
+            existing_match = existing_match.scalar()
+            
+            if not existing_match:
+                new_match = Match(user1_id=user1_id, user2_id=user2_id, group_id=group_id, status="exchanged_contacts")
+                session.add(new_match)
+            else:
+                existing_match.status = "exchanged_contacts"
+            
+            await session.commit()
+            
+            # Delete match cards
+            try:
+                await callback.message.delete()
+            except Exception:
+                pass
+            
+            # Notify both users about successful match and exchange contacts
+            await notify_successful_match_and_exchange_contacts(callback.bot, user, match_user, member, match_member)
+            await callback.answer()
+            return
+        
+        # Check if request already exists from this user
+        existing_request = await session.execute(select(MatchStatus).where(
+            MatchStatus.user_id == user.id,
+            MatchStatus.group_id == group_id,
+            MatchStatus.match_user_id == match_user.id
+        ))
+        existing_request = existing_request.scalar()
+        
+        # Create or update "pending" status for initiator
+        if existing_request:
+            if existing_request.status == "blocked":
+                await callback.answer("You cannot connect with this user")
+                return
+            existing_request.status = "pending"
+        else:
+            new_request = MatchStatus(user_id=user.id, group_id=group_id, match_user_id=match_user.id, status="pending")
+            session.add(new_request)
+        
+        await session.commit()
+    
+    # Delete match card
+    try:
+        await callback.message.delete()
+    except Exception:
+        pass
+    
+    # Delete "vibing" message
+    data = await state.get_data()
+    vibing_msg_id = data.get("vibing_msg_id")
+    if vibing_msg_id:
+        try:
+            await callback.message.bot.delete_message(callback.message.chat.id, vibing_msg_id)
+        except Exception:
+            pass
+        await state.update_data(vibing_msg_id=None)
+    
+    # Notify initiator that request was sent
+    await callback.message.answer(
+        get_message("MATCH_REQUEST_SENT", user=user, nickname=match_member.nickname if match_member else "Unknown")
+    )
+    
+    # Send notification to second user
+    await send_connection_request_to_user(callback.bot, user, match_user, member, match_member, group_id)
+    
+    await callback.answer()
+
+async def send_connection_request_to_user(bot, initiator_user, target_user, initiator_member, target_member, group_id):
+    """Отправить уведомление о запросе на подключение"""
+    from src.utils.redis import get_telegram_user_id
+    from src.services.groups import find_best_match
+    
+    target_telegram_user_id = await get_telegram_user_id(target_user.id)
+    if not target_telegram_user_id:
+        import logging
+        logging.error(f"[send_connection_request] No telegram_user_id in Redis for user_id={target_user.id}")
+        return
+    
+    try:
+        # Get match data for display
+        reverse_match = await find_best_match(target_user.id, group_id, exclude_user_ids=[])
+        if reverse_match and reverse_match.get('user_id') == initiator_user.id:
+            similarity = reverse_match['similarity']
+            common_questions = reverse_match['common_questions']
+            valid_users_count = reverse_match['valid_users_count']
+        else:
+            # Fallback values
+            similarity = 85
+            common_questions = 3
+            valid_users_count = 2
+        
+        # First message about connection request
+        request_text = get_message("MATCH_INCOMING_REQUEST", user=target_user, 
+                                 nickname=initiator_member.nickname if initiator_member else "Unknown")
+        
+        # Then match card
+        intro_text = f"\n{initiator_member.intro}" if initiator_member and initiator_member.intro else ""
+        match_text = get_message("MATCH_FOUND", user=target_user, 
+                               nickname=initiator_member.nickname if initiator_member else "Unknown", 
+                               intro=intro_text, similarity=similarity, 
+                               common_questions=common_questions, valid_users_count=valid_users_count)
+        
+        # Buttons for accept/decline/block
+        kb = types.InlineKeyboardMarkup(inline_keyboard=[
+            [
+                types.InlineKeyboardButton(text=get_message("BTN_ACCEPT_MATCH", user=target_user), 
+                                         callback_data=f"accept_match_{initiator_user.id}"),
+                types.InlineKeyboardButton(text=get_message("BTN_DECLINE_MATCH", user=target_user), 
+                                         callback_data=f"decline_match_{initiator_user.id}")
+            ],
+            [
+                types.InlineKeyboardButton(text=get_message("BTN_BLOCK_MATCH", user=target_user), 
+                                         callback_data=f"block_match_{initiator_user.id}")
+            ]
+        ])
+        
+        # Send notification to target user
+        await bot.send_message(target_telegram_user_id, request_text, parse_mode="HTML")
+        
+        # Send match card with photo and buttons
+        if initiator_member and initiator_member.photo_url:
+            await bot.send_photo(target_telegram_user_id, initiator_member.photo_url, 
+                               caption=match_text, reply_markup=kb, parse_mode="HTML")
+        else:
+            await bot.send_message(target_telegram_user_id, match_text, 
+                                 reply_markup=kb, parse_mode="HTML")
+            
+    except Exception as e:
+        import logging
+        logging.error(f"[send_connection_request] Failed to send request to user_id={target_user.id}: {e}")
+
+async def notify_successful_match_and_exchange_contacts(bot, user1, user2, member1, member2):
+    """Уведомить об успешном мэтче и обменяться контактами"""
+    from src.utils.redis import get_telegram_user_id
+    
+    # Get telegram user IDs
+    user1_telegram_id = await get_telegram_user_id(user1.id)
+    user2_telegram_id = await get_telegram_user_id(user2.id)
+    
+    if not user1_telegram_id or not user2_telegram_id:
+        import logging
+        logging.error(f"[notify_successful_match] Missing telegram IDs: user1={user1_telegram_id}, user2={user2_telegram_id}")
+        return
+    
+    try:
+        # Notify both users about successful match
+        success_msg1 = get_message("MATCH_REQUEST_ACCEPTED", user=user1, 
+                                 nickname=member2.nickname if member2 else "Unknown")
+        success_msg2 = get_message("MATCH_REQUEST_ACCEPTED", user=user2, 
+                                 nickname=member1.nickname if member1 else "Unknown")
+        
+        await bot.send_message(user1_telegram_id, success_msg1, parse_mode="HTML")
+        await bot.send_message(user2_telegram_id, success_msg2, parse_mode="HTML")
+        
+        # Note: Real contact exchange would require actual phone numbers
+        # For now, we'll just send the Telegram usernames/IDs as contact info
+        contact_msg1 = f"📞 Контакт: @{user2_telegram_id} ({member2.nickname if member2 else 'Unknown'})"
+        contact_msg2 = f"📞 Контакт: @{user1_telegram_id} ({member1.nickname if member1 else 'Unknown'})"
+        
+        await bot.send_message(user1_telegram_id, contact_msg1, parse_mode="HTML")
+        await bot.send_message(user2_telegram_id, contact_msg2, parse_mode="HTML")
+                                 
+    except Exception as e:
+        import logging
+        logging.error(f"[notify_successful_match] Failed to exchange contacts: {e}")
+
 @router.callback_query(F.data.startswith("accept_match_"))
 async def cb_accept_match(callback: types.CallbackQuery, state: FSMContext):
-    """Принять запрос на подключение к матчу"""
-    from src.utils.redis import get_or_restore_internal_user_id, get_telegram_user_id
-    from urllib.parse import quote
+    """Принять запрос на подключение к матчу (новая упрощенная логика)"""
+    from src.utils.redis import get_or_restore_internal_user_id
     
     user_id = await get_or_restore_internal_user_id(state, callback.from_user.id)
     if not user_id:
@@ -920,20 +1146,26 @@ async def cb_accept_match(callback: types.CallbackQuery, state: FSMContext):
         
         member = await session.execute(select(GroupMember).where(GroupMember.user_id == user.id, GroupMember.group_id == group_id))
         member = member.scalar()
+        initiator_member = await session.execute(select(GroupMember).where(GroupMember.user_id == initiator_user_id, GroupMember.group_id == group_id))
+        initiator_member = initiator_member.scalar()
         
-        # Update status to "accepted"
+        if not initiator or not member or not initiator_member:
+            await callback.answer("User not found", show_alert=True)
+            return
+        
+        # Update status to "accepted" and create Match with exchanged_contacts
         match_status = await session.execute(select(MatchStatus).where(
             MatchStatus.user_id == initiator_user_id,
             MatchStatus.group_id == group_id,
             MatchStatus.match_user_id == user.id,
-            MatchStatus.status == "pending_approval"
+            MatchStatus.status == "pending"
         ))
         match_status = match_status.scalar()
         
         if match_status:
             match_status.status = "accepted"
         
-        # Create Match record
+        # Create Match record with exchanged_contacts status
         user1_id = min(user.id, initiator.id)
         user2_id = max(user.id, initiator.id)
         
@@ -945,10 +1177,10 @@ async def cb_accept_match(callback: types.CallbackQuery, state: FSMContext):
         existing_match = existing_match.scalar()
         
         if not existing_match:
-            from datetime import datetime, UTC
-            new_match = Match(user1_id=user1_id, user2_id=user2_id, group_id=group_id, 
-                            created_at=datetime.now(UTC), status="active")
+            new_match = Match(user1_id=user1_id, user2_id=user2_id, group_id=group_id, status="exchanged_contacts")
             session.add(new_match)
+        else:
+            existing_match.status = "exchanged_contacts"
         
         await session.commit()
     
@@ -960,51 +1192,83 @@ async def cb_accept_match(callback: types.CallbackQuery, state: FSMContext):
     except Exception:
         pass
     
-    # Get telegram_user_id for chat link creation
-    user_telegram_id = await get_telegram_user_id(user.id)
-    initiator_telegram_id = await get_telegram_user_id(initiator.id)
-    
-    if user_telegram_id and initiator_telegram_id:
-        # Form chat link
-        param = quote(f"match_{user_telegram_id}_{initiator_telegram_id}")
-        link = f"https://t.me/{ALLKINDS_CHAT_BOT_USERNAME}?start={param}"
-        
-        # Send go-to-chat button to accepting user
-        kb = types.InlineKeyboardMarkup(inline_keyboard=[
-            [types.InlineKeyboardButton(text=get_message(BTN_GO_TO_CHAT, user=user), url=link)]
-        ])
-        
-        initiator_member = await session.execute(select(GroupMember).where(GroupMember.user_id == initiator.id, GroupMember.group_id == group_id))
-        initiator_member = initiator_member.scalar()
-        await callback.message.answer(
-            get_message(MATCH_REQUEST_ACCEPTED, user=user, nickname=initiator_member.nickname if initiator_member else "Unknown"),
-            reply_markup=kb
-        )
-        
-        # Notify initiator about acceptance
-        if initiator_telegram_id:
-            param_initiator = quote(f"match_{initiator_telegram_id}_{user_telegram_id}")
-            link_initiator = f"https://t.me/{ALLKINDS_CHAT_BOT_USERNAME}?start={param_initiator}"
-            
-            kb_initiator = types.InlineKeyboardMarkup(inline_keyboard=[
-                [types.InlineKeyboardButton(text=get_message(BTN_GO_TO_CHAT, user=initiator), url=link_initiator)]
-            ])
-            
-            try:
-                await callback.bot.send_message(
-                    initiator_telegram_id,
-                    get_message(MATCH_REQUEST_ACCEPTED, user=initiator, nickname=member.nickname if member else "Unknown"),
-                    reply_markup=kb_initiator
-                )
-            except Exception as e:
-                import logging
-                logging.error(f"[cb_accept_match] Failed to notify initiator: {e}")
+    # Notify both users about successful match and exchange contacts
+    await notify_successful_match_and_exchange_contacts(callback.bot, initiator, user, initiator_member, member)
     
     await callback.answer()
 
-@router.callback_query(F.data.startswith("reject_match_"))
-async def cb_reject_match(callback: types.CallbackQuery, state: FSMContext):
+@router.callback_query(F.data.startswith("decline_match_"))
+async def cb_decline_match(callback: types.CallbackQuery, state: FSMContext):
     """Отклонить запрос на подключение к матчу"""
+    from src.utils.redis import get_or_restore_internal_user_id, get_telegram_user_id
+    
+    user_id = await get_or_restore_internal_user_id(state, callback.from_user.id)
+    if not user_id:
+        await callback.answer("Please start the bot to use this feature.", show_alert=True)
+        return
+    
+    initiator_user_id = int(callback.data.split("_")[-1])
+    
+    async with AsyncSessionLocal() as session:
+        user = await session.execute(select(User).where(User.id == user_id))
+        user = user.scalar()
+        group_id = user.current_group_id if user else None
+        
+        if not user or not group_id:
+            await callback.answer("Please start the bot to use this feature.", show_alert=True)
+            return
+        
+        initiator = await session.execute(select(User).where(User.id == initiator_user_id))
+        initiator = initiator.scalar()
+        
+        member = await session.execute(select(GroupMember).where(GroupMember.user_id == user.id, GroupMember.group_id == group_id))
+        member = member.scalar()
+        initiator_member = await session.execute(select(GroupMember).where(GroupMember.user_id == initiator_user_id, GroupMember.group_id == group_id))
+        initiator_member = initiator_member.scalar()
+        
+        if not initiator or not member or not initiator_member:
+            await callback.answer("User not found", show_alert=True)
+            return
+        
+        # Update status to "declined"
+        match_status = await session.execute(select(MatchStatus).where(
+            MatchStatus.user_id == initiator_user_id,
+            MatchStatus.group_id == group_id,
+            MatchStatus.match_user_id == user.id,
+            MatchStatus.status == "pending"
+        ))
+        match_status = match_status.scalar()
+        
+        if match_status:
+            match_status.status = "declined"
+        
+        await session.commit()
+    
+    # Delete request messages
+    try:
+        await callback.message.delete()
+        # Try to delete previous message (request text)
+        await callback.bot.delete_message(callback.message.chat.id, callback.message.message_id - 1)
+    except Exception:
+        pass
+    
+    # Notify initiator about rejection
+    initiator_telegram_id = await get_telegram_user_id(initiator.id)
+    if initiator_telegram_id:
+        try:
+            await callback.bot.send_message(
+                initiator_telegram_id,
+                get_message("MATCH_REQUEST_REJECTED", user=initiator, nickname=member.nickname if member else "Unknown")
+            )
+        except Exception as e:
+            import logging
+            logging.error(f"[cb_decline_match] Failed to notify initiator: {e}")
+    
+    await callback.answer()
+
+@router.callback_query(F.data.startswith("block_match_"))
+async def cb_block_match(callback: types.CallbackQuery, state: FSMContext):
+    """Заблокировать пользователя"""
     from src.utils.redis import get_or_restore_internal_user_id, get_telegram_user_id
     
     user_id = await get_or_restore_internal_user_id(state, callback.from_user.id)

@@ -301,19 +301,30 @@ async def leave_group_service(user_id: int, group_id: int) -> dict:
         return {"ok": True, "groups": [{"id": g.id, "name": g.name} for g in groups]}
 
 async def find_best_match(user_id: int, group_id: int, exclude_user_ids: list[int] = None) -> dict | None:
-    """Найти лучшего мэтча для пользователя в группе по максимальному совпадению ответов, исключая hidden/postponed. Similarity: 1 - (Σ|A_i-B_i|)/(4*N)."""
+    """Найти лучшего мэтча для пользователя в группе по максимальному совпадению ответов, исключая hidden/postponed/connect statuses. Similarity: 1 - (Σ|A_i-B_i|)/(4*N)."""
     exclude_user_ids = exclude_user_ids or []
     async with AsyncSessionLocal() as session:
         user = await session.execute(select(User).where(User.id == user_id))
         user = user.scalar()
         if not user:
             return None
-        # Exclude users with match_status
+        # Exclude users with match_status including new connect statuses  
         statuses = await session.execute(select(MatchStatus.match_user_id, MatchStatus.status).where(
             MatchStatus.user_id == user.id, MatchStatus.group_id == group_id))
         for match_user_id, status in statuses.all():
-            if status in ("hidden", "postponed", "pending_approval", "rejected", "blocked"):
+            if status in ("hidden", "postponed", "pending", "accepted", "declined", "blocked"):
                 exclude_user_ids.append(match_user_id)
+        
+        # Also exclude users with exchanged_contacts status in Match table
+        from src.models import Match
+        exchanged_matches = await session.execute(select(Match).where(
+            Match.group_id == group_id,
+            Match.status == "exchanged_contacts",
+            ((Match.user1_id == user.id) | (Match.user2_id == user.id))
+        ))
+        for match in exchanged_matches.scalars().all():
+            other_user_id = match.user2_id if match.user1_id == user.id else match.user1_id
+            exclude_user_ids.append(other_user_id)
         # Get all user's answers for group questions
         user_answers = await session.execute(
             select(Answer.question_id, Answer.value).where(
@@ -423,12 +434,23 @@ async def find_all_matches(user_id: int, group_id: int, exclude_user_ids: list[i
         if not user:
             return []
         
-        # Exclude users with match_status
+        # Exclude users with match_status including new connect statuses
         statuses = await session.execute(select(MatchStatus.match_user_id, MatchStatus.status).where(
             MatchStatus.user_id == user.id, MatchStatus.group_id == group_id))
         for match_user_id, status in statuses.all():
-            if status in ("hidden", "postponed", "pending_approval", "rejected", "blocked"):
+            if status in ("hidden", "postponed", "pending", "accepted", "declined", "blocked"):
                 exclude_user_ids.append(match_user_id)
+        
+        # Also exclude users with exchanged_contacts status in Match table
+        from src.models import Match
+        exchanged_matches = await session.execute(select(Match).where(
+            Match.group_id == group_id,
+            Match.status == "exchanged_contacts",
+            ((Match.user1_id == user.id) | (Match.user2_id == user.id))
+        ))
+        for match in exchanged_matches.scalars().all():
+            other_user_id = match.user2_id if match.user1_id == user.id else match.user1_id
+            exclude_user_ids.append(other_user_id)
         
         # Get all user's answers for group questions
         user_answers = await session.execute(

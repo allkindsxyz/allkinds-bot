@@ -100,8 +100,10 @@ MESSAGES = {
         "BTN_LOOKING_FOR_FEMALE": "👩 Female",
         "BTN_LOOKING_FOR_ALL": "👥 All",
         "BTN_WHO_IS_VIBING": "🔍 Who's vibing highest right now",
+        "BTN_CONNECT": "🤝 Connect",
         "BTN_ACCEPT_MATCH": "✅ Accept",
         "BTN_REJECT_MATCH": "❌ Decline",
+        "BTN_DECLINE_MATCH": "❌ Decline",
         "BTN_BLOCK_MATCH": "🚫 Block",
         "BTN_GO_TO_CHAT": "💬 Go to Chat",
         "NO_AVAILABLE_ANSWERED_QUESTIONS": "🫥 You answered some Qs, but they were deleted—nothing to review.",
@@ -213,8 +215,10 @@ MESSAGES = {
         "BTN_LOOKING_FOR_FEMALE": "👩 Женщину",
         "BTN_LOOKING_FOR_ALL": "👥 Всех",
         "BTN_WHO_IS_VIBING": "🔍 Кто сейчас резонирует больше всех",
+        "BTN_CONNECT": "🤝 Связаться",
         "BTN_ACCEPT_MATCH": "✅ Принять",
         "BTN_REJECT_MATCH": "❌ Отклонить",
+        "BTN_DECLINE_MATCH": "❌ Отклонить",
         "BTN_BLOCK_MATCH": "🚫 Заблокировать",
         "BTN_GO_TO_CHAT": "💬 Перейти в чат",
         "NO_AVAILABLE_ANSWERED_QUESTIONS": "🫥 Ты отвечал на вопросы, но они были удалены.",
@@ -332,9 +336,11 @@ BTN_LOOKING_FOR_MALE = "BTN_LOOKING_FOR_MALE"
 BTN_LOOKING_FOR_FEMALE = "BTN_LOOKING_FOR_FEMALE"
 BTN_LOOKING_FOR_ALL = "BTN_LOOKING_FOR_ALL"
 BTN_WHO_IS_VIBING = "BTN_WHO_IS_VIBING"
+BTN_CONNECT = "BTN_CONNECT"
 BTN_ACCEPT_MATCH = "BTN_ACCEPT_MATCH"
 BTN_REJECT_MATCH = "BTN_REJECT_MATCH"
 BTN_BLOCK_MATCH = "BTN_BLOCK_MATCH"
+BTN_DECLINE_MATCH = "BTN_DECLINE_MATCH"
 BTN_GO_TO_CHAT = "BTN_GO_TO_CHAT"
 
 NO_AVAILABLE_ANSWERED_QUESTIONS = "NO_AVAILABLE_ANSWERED_QUESTIONS"
