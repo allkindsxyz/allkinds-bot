@@ -355,6 +355,9 @@ async def cb_confirm_delete_group(callback: types.CallbackQuery, state: FSMConte
         await callback.message.answer(get_message("Please start the bot to use this feature.", user=callback.from_user))
         await callback.answer()
         return
+    async with AsyncSessionLocal() as session:
+        user = await session.execute(select(User).where(User.id == user_id))
+        user = user.scalar()
     from src.services.groups import get_user_groups
     groups = await get_user_groups(user_id)
     group = next((g for g in groups if g["id"] == group_id), None)
@@ -383,6 +386,9 @@ async def cb_delete_group_yes(callback: types.CallbackQuery, state: FSMContext):
         await callback.message.answer(get_message("Please start the bot to use this feature.", user=callback.from_user))
         await callback.answer()
         return
+    async with AsyncSessionLocal() as session:
+        user = await session.execute(select(User).where(User.id == user_id))
+        user = user.scalar()
     # Delete group via service
     result = await delete_group_service(group_id)
     if result["ok"]:
