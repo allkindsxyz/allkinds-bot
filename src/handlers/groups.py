@@ -1103,15 +1103,6 @@ async def notify_successful_match_and_exchange_contacts(bot, user1, user2, membe
         return
     
     try:
-        # Notify both users about successful match
-        success_msg1 = get_message("MATCH_REQUEST_ACCEPTED", user=user1, 
-                                 nickname=member2.nickname if member2 else "Unknown")
-        success_msg2 = get_message("MATCH_REQUEST_ACCEPTED", user=user2, 
-                                 nickname=member1.nickname if member1 else "Unknown")
-        
-        await bot.send_message(user1_telegram_id, success_msg1, parse_mode="HTML")
-        await bot.send_message(user2_telegram_id, success_msg2, parse_mode="HTML")
-        
         # Get Telegram usernames for both users
         try:
             user1_chat = await bot.get_chat(user1_telegram_id)
@@ -1125,12 +1116,29 @@ async def notify_successful_match_and_exchange_contacts(bot, user1, user2, membe
         except Exception:
             user2_username = f"id{user2_telegram_id}"
         
-        # Send contact information with usernames
+        # Send combined message with photo to user1 (about user2)
+        success_msg1 = get_message("MATCH_REQUEST_ACCEPTED", user=user1, 
+                                 nickname=member2.nickname if member2 else "Unknown")
         contact_msg1 = f"📞 Контакт: @{user2_username} ({member2.nickname if member2 else 'Unknown'})"
-        contact_msg2 = f"📞 Контакт: @{user1_username} ({member1.nickname if member1 else 'Unknown'})"
+        combined_msg1 = f"{success_msg1}\n{contact_msg1}"
         
-        await bot.send_message(user1_telegram_id, contact_msg1, parse_mode="HTML")
-        await bot.send_message(user2_telegram_id, contact_msg2, parse_mode="HTML")
+        if member2 and member2.photo_url:
+            await bot.send_photo(user1_telegram_id, member2.photo_url, 
+                               caption=combined_msg1, parse_mode="HTML")
+        else:
+            await bot.send_message(user1_telegram_id, combined_msg1, parse_mode="HTML")
+        
+        # Send combined message with photo to user2 (about user1)
+        success_msg2 = get_message("MATCH_REQUEST_ACCEPTED", user=user2, 
+                                 nickname=member1.nickname if member1 else "Unknown")
+        contact_msg2 = f"📞 Контакт: @{user1_username} ({member1.nickname if member1 else 'Unknown'})"
+        combined_msg2 = f"{success_msg2}\n{contact_msg2}"
+        
+        if member1 and member1.photo_url:
+            await bot.send_photo(user2_telegram_id, member1.photo_url, 
+                               caption=combined_msg2, parse_mode="HTML")
+        else:
+            await bot.send_message(user2_telegram_id, combined_msg2, parse_mode="HTML")
                                  
     except Exception as e:
         import logging
