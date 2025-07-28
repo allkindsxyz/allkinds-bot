@@ -1,8 +1,8 @@
-"""add intro field to group_members
+"""add bio field to group_members
 
-Revision ID: 5b85129b983
-Revises: abcd1234567890
-Create Date: 2025-01-28 13:15:00.000000
+Revision ID: f22692de6fa
+Revises: abcd1234567890_add_gender_fields
+Create Date: 2025-01-28 16:30:00.000000
 
 """
 from typing import Sequence, Union
@@ -12,7 +12,7 @@ import sqlalchemy as sa
 
 
 # revision identifiers, used by Alembic.
-revision: str = '5b85129b983'
+revision: str = 'f22692de6fa'
 down_revision: Union[str, None] = 'abcd1234567890_add_gender_fields'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
