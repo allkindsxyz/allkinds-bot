@@ -503,7 +503,7 @@ async def update_badge_for_new_question(bot, user, new_question):
         telegram_user_id = await get_telegram_user_id(user.id)
         if not telegram_user_id:
             return
-            try:
+        try:
             if unanswered == 1:
                 # Это был первый неотвеченный — пушим новый вопрос
                 await send_question_to_user(bot, user, new_question)
