@@ -405,7 +405,7 @@ async def find_best_match(user_id: int, group_id: int, exclude_user_ids: list[in
                 "user_id": best_match.user_id,
                 "nickname": best_match.nickname,
                 "photo_url": best_match.photo_url,
-                "intro": best_match.intro,
+                "intro": best_match.bio,
                 "similarity": best_score,
                 "common_questions": best_common_questions,
                 "valid_users_count": valid_users_count
@@ -506,7 +506,7 @@ async def find_all_matches(user_id: int, group_id: int, exclude_user_ids: list[i
                 "user_id": member.user_id,
                 "nickname": member.nickname,
                 "photo_url": member.photo_url,
-                "intro": member.intro,
+                "intro": member.bio,
                 "similarity": similarity,
                 "common_questions": len(common_questions),
                 "valid_users_count": len(filtered_members)

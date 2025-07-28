@@ -670,8 +670,14 @@ async def cb_match_nav(callback: types.CallbackQuery, state: FSMContext):
             if member.balance < POINTS_FOR_MATCH:
                 await callback.answer(get_message(MATCH_NOT_ENOUGH_POINTS, user=callback.from_user))
                 return
+            old_balance = member.balance
             member.balance -= POINTS_FOR_MATCH
             await session.commit()
+            # Show balance change popup
+            await callback.answer(f"💎 Balance: {member.balance} (-{POINTS_FOR_MATCH})", show_alert=False)
+        else:
+            # Free navigation backwards - just show current balance
+            await callback.answer(f"💎 Balance: {member.balance}", show_alert=False)
         
         await show_match_with_navigation(callback, user, matches, new_index)
 
@@ -849,7 +855,7 @@ async def cb_match_chat(callback: types.CallbackQuery, state: FSMContext):
         request_text = get_message(MATCH_INCOMING_REQUEST, user=match_user, nickname=member.nickname if member else "Unknown")
         
         # Then match card
-        intro_text = f"\n{member.intro}" if member and member.intro else ""
+        intro_text = f"\n{member.bio}" if member and member.bio else ""
         match_text = get_message(MATCH_FOUND, user=match_user, nickname=member.nickname if member else "Unknown", 
                                intro=intro_text, similarity=similarity, common_questions=common_questions, valid_users_count=valid_users_count)
         
