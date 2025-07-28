@@ -106,10 +106,10 @@ async def onboarding_looking_for(callback: types.CallbackQuery, state: FSMContex
     await state.set_state(Onboarding.location)
     await callback.message.edit_text(
         get_message("ONBOARDING_SEND_LOCATION", user or callback.from_user),
-        reply_markup=types.InlineKeyboardMarkup(inline_keyboard=[[types.InlineKeyboardButton(text="Continue", callback_data="location_continue")]])
+        reply_markup=None
     )
     await callback.message.answer(
-        get_message("BTN_SEND_LOCATION", user or callback.from_user),
+        "📍",
         reply_markup=types.ReplyKeyboardMarkup(
             keyboard=[[types.KeyboardButton(text=get_message("BTN_SEND_LOCATION", user or callback.from_user), request_location=True)]],
             resize_keyboard=True,
@@ -146,14 +146,9 @@ async def onboarding_location(message: types.Message, state: FSMContext):
             await state.update_data(internal_user_id=user_id)
             await message.answer(get_message("ONBOARDING_COMPLETE", user or message.from_user, bonus=WELCOME_BONUS), reply_markup=types.ReplyKeyboardRemove())
             
-            # Show first question directly without welcome (already shown)
-            async with AsyncSessionLocal() as session:
-                first_question = await get_next_unanswered_question(session, group_id, user_id)
-                if first_question:
-                    await send_question_to_user(message.bot, user, first_question)
-                else:
-                    from src.texts.messages import GROUPS_NO_NEW_QUESTIONS
-                    await message.answer(get_message(GROUPS_NO_NEW_QUESTIONS, user=user))
+            # Show group welcome with "Who is vibing" button and first question
+            from src.handlers.groups import show_group_welcome_and_question
+            await show_group_welcome_and_question(message, user_id, group_id)
         else:
             await message.answer(get_message("ONBOARDING_SOMETHING_WRONG", user or message.from_user))
             await state.clear()
