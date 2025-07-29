@@ -10,7 +10,7 @@ from src.services.groups import get_user_groups, is_group_creator, is_onboarded,
 from src.services.onboarding import is_onboarding_complete_service
 from src.db import AsyncSessionLocal
 from sqlalchemy import select, and_
-from src.models import User, GroupMember, GroupCreator
+from src.models import User, GroupMember, GroupCreator, Question
 from src.keyboards.groups import get_user_keyboard, get_admin_keyboard, get_group_reply_keyboard
 from src.utils.redis import get_internal_user_id, set_telegram_mapping, update_ttl, get_or_restore_internal_user_id
 from src.constants import WELCOME_BONUS
@@ -435,3 +435,40 @@ async def add_creator_command(message: types.Message, state: FSMContext):
         session.add(GroupCreator(user_id=user.id))
         await session.commit()
         await message.answer(f"User {telegram_id} added to group_creators (internal id: {user.id}).") 
+
+async def migrate_old_questions_to_approved():
+    """
+    Temporary function to migrate all pending questions to approved status.
+    This is for backward compatibility with questions created before moderation system.
+    """
+    import logging
+    from sqlalchemy import update
+    
+    async with AsyncSessionLocal() as session:
+        # Update all pending questions to approved
+        result = await session.execute(
+            update(Question).where(Question.status == "pending").values(status="approved")
+        )
+        await session.commit()
+        
+        count = result.rowcount
+        logging.warning(f"[migrate_old_questions] Updated {count} questions from pending to approved")
+        return count 
+
+@router.message(Command("migrate_questions"))
+async def cmd_migrate_questions(message: types.Message):
+    """Admin command to migrate old pending questions to approved status"""
+    # Only allow specific admin user (replace with your admin Telegram ID)
+    admin_telegram_ids = [338080957, 485985509]  # Add your admin Telegram IDs here
+    
+    if message.from_user.id not in admin_telegram_ids:
+        await message.answer("❌ Access denied. Admin only command.")
+        return
+    
+    try:
+        count = await migrate_old_questions_to_approved()
+        await message.answer(f"✅ Migration completed! Updated {count} questions from pending to approved status.")
+    except Exception as e:
+        import logging
+        logging.exception("Error in migrate_questions command")
+        await message.answer(f"❌ Error during migration: {str(e)}") 
