@@ -539,8 +539,13 @@ async def find_all_matches(user_id: int, group_id: int, exclude_user_ids: list[i
             similarity = round((1 - distance / max_distance) * 100)
             
             # Calculate distance information
+            import logging
             from src.utils.distance import get_match_distance_info
+            logging.warning(f"[find_all_matches] Calculating distance for user {current_member.user_id} -> {member.user_id}")
+            logging.warning(f"[find_all_matches] current_member: lat={getattr(current_member, 'geolocation_lat', None)}, lon={getattr(current_member, 'geolocation_lon', None)}, city={getattr(current_member, 'city', None)}, country={getattr(current_member, 'country', None)}")
+            logging.warning(f"[find_all_matches] member: lat={getattr(member, 'geolocation_lat', None)}, lon={getattr(member, 'geolocation_lon', None)}, city={getattr(member, 'city', None)}, country={getattr(member, 'country', None)}")
             distance_info = get_match_distance_info(current_member, member)
+            logging.warning(f"[find_all_matches] Calculated distance_info: {distance_info}")
             
             matches.append({
                 "user_id": member.user_id,
