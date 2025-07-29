@@ -143,9 +143,9 @@ async def show_group_main_flow(message, user_id, group_id):
             import logging
             all_questions = await session.execute(
                 select(Question).where(
-                    Question.group_id == group_id,
-                    Question.is_deleted == 0
-                )
+                Question.group_id == group_id,
+                Question.is_deleted == 0
+            )
             )
             all_questions_list = all_questions.scalars().all()
             approved_questions = [q for q in all_questions_list if q.status == "approved"]
@@ -532,7 +532,7 @@ async def process_invite_code(message: types.Message, state: FSMContext):
         data = await state.get_data()
         current_state = await state.get_state()
         if not current_state:  # No onboarding state set
-            await state.clear()
+    await state.clear()
             await state.update_data(internal_user_id=user_id)
 
 @router.callback_query(F.data.startswith("find_match_"))
@@ -628,13 +628,13 @@ async def show_match_with_navigation(callback_or_message, user, matches: list, i
         if nav_row:
             nav_buttons.append(nav_row)
     
-    kb = types.InlineKeyboardMarkup(inline_keyboard=[
+        kb = types.InlineKeyboardMarkup(inline_keyboard=[
         *nav_buttons,
         # [types.InlineKeyboardButton(text=get_message(MATCH_AI_CHEMISTRY, user=user, points=POINTS_TO_CONNECT), callback_data=f"match_chat_{match['user_id']}")],  # Commented out - will return later
         [types.InlineKeyboardButton(text=get_message("BTN_CONNECT", user=user), callback_data=f"connect_{match['user_id']}")],
-        [types.InlineKeyboardButton(text=get_message(MATCH_SHOW_AGAIN, user=user), callback_data=f"match_postpone_{match['user_id']}")],
-        [types.InlineKeyboardButton(text=get_message(MATCH_DONT_SHOW, user=user), callback_data=f"match_hide_{match['user_id']}")]
-    ])
+            [types.InlineKeyboardButton(text=get_message(MATCH_SHOW_AGAIN, user=user), callback_data=f"match_postpone_{match['user_id']}")],
+            [types.InlineKeyboardButton(text=get_message(MATCH_DONT_SHOW, user=user), callback_data=f"match_hide_{match['user_id']}")]
+        ])
     
     if hasattr(callback_or_message, 'message'):  # It's a callback
         # Store matches in state for navigation
@@ -651,7 +651,7 @@ async def show_match_with_navigation(callback_or_message, user, matches: list, i
                 # For navigation, always delete and send new photo to ensure photo updates
                 await callback_or_message.message.delete()
                 await callback_or_message.message.answer_photo(match['photo_url'], caption=text, reply_markup=kb, parse_mode="HTML")
-            else:
+        else:
                 # Delete text message and send photo
                 await callback_or_message.message.delete()
                 await callback_or_message.message.answer_photo(match['photo_url'], caption=text, reply_markup=kb, parse_mode="HTML")
@@ -1366,13 +1366,13 @@ async def cb_decline_match(callback: types.CallbackQuery, state: FSMContext):
     # Notify initiator about rejection
     initiator_telegram_id = await get_telegram_user_id(initiator.id)
     if initiator_telegram_id:
-        try:
-            await callback.bot.send_message(
-                initiator_telegram_id,
+            try:
+                await callback.bot.send_message(
+                    initiator_telegram_id,
                 get_message("MATCH_REQUEST_REJECTED", user=initiator, nickname=member.nickname if member else "Unknown")
-            )
-        except Exception as e:
-            import logging
+                )
+            except Exception as e:
+                import logging
             logging.error(f"[cb_decline_match] Failed to notify initiator: {e}")
     
     await callback.answer()

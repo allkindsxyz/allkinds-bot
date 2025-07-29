@@ -171,7 +171,7 @@ async def cb_answer_question(callback: types.CallbackQuery, state: FSMContext):
             # Debug: check if there are any approved questions at all
             all_questions = await session.execute(
                 select(Question).where(
-                    Question.group_id == question.group_id,
+            Question.group_id == question.group_id,
                     Question.is_deleted == 0,
                     Question.status == "approved"
                 )
@@ -538,6 +538,7 @@ async def update_badge_for_new_question(bot, user, new_question):
         telegram_user_id = await get_telegram_user_id(user.id)
         if not telegram_user_id:
             return
+        
         try:
             if unanswered == 1:
                 # Это был первый неотвеченный — пушим новый вопрос
@@ -628,7 +629,7 @@ async def send_question_for_approval(bot, admin_user, question, author_user):
         logging.error(f"[send_question_for_approval] Failed to send to admin: {e}")
 
 @router.callback_query(F.data.startswith("approve_question_"))
-async def cb_approve_question(callback: types.CallbackQuery):
+async def cb_approve_question(callback: types.CallbackQuery, state: FSMContext):
     """Admin approves a question"""
     question_id = int(callback.data.split("_")[2])
     
@@ -647,8 +648,8 @@ async def cb_approve_question(callback: types.CallbackQuery):
             await callback.answer("Group not found", show_alert=True)
             return
         
-        # Verify admin privileges
-        admin_user_id = await get_or_restore_internal_user_id(callback.from_user.id)
+        # Verify admin privileges - use state parameter
+        admin_user_id = await get_or_restore_internal_user_id(state, callback.from_user.id)
         if group.creator_user_id != admin_user_id:
             await callback.answer("❌ Access denied. Only group admin can approve questions.", show_alert=True)
             return
@@ -696,8 +697,8 @@ async def cb_reject_question(callback: types.CallbackQuery, state: FSMContext):
     """Handle question rejection by admin"""
     question_id = int(callback.data.split("_")[-1])
     
-    data = await state.get_data()
-    admin_user_id = data.get('internal_user_id')
+    # Get admin user ID using state
+    admin_user_id = await get_or_restore_internal_user_id(state, callback.from_user.id)
     if not admin_user_id:
         await callback.answer("Please start the bot to use this feature.")
         return
@@ -749,8 +750,8 @@ async def cb_ban_user(callback: types.CallbackQuery, state: FSMContext):
     """Handle user ban by admin"""
     question_id = int(callback.data.split("_")[-1])
     
-    data = await state.get_data()
-    admin_user_id = data.get('internal_user_id')
+    # Get admin user ID using state
+    admin_user_id = await get_or_restore_internal_user_id(state, callback.from_user.id)
     if not admin_user_id:
         await callback.answer("Please start the bot to use this feature.")
         return
