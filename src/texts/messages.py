@@ -54,6 +54,9 @@ MESSAGES = {
         "QUESTION_REJECTED_ADMIN": "❌ Question rejected.",
         "QUESTION_APPROVED_AUTHOR": "✅ Your question was approved! +{points}💎 to your account.",
         "QUESTION_REJECTED_AUTHOR": "❌ Your question was rejected by the admin.",
+        "USER_BANNED_ADMIN": "🚫 User {banned_nickname} has been banned and removed from the group.",
+        "USER_BANNED_NOTIFICATION": "🚫 You have been banned from group '{group_name}' for spam behavior.",
+        "USER_BANNED_JOIN_ATTEMPT": "🚫 You are banned from this group and cannot join.",
         "QUESTION_DELETED": "🗑 Question deleted.",
         "QUESTION_ALREADY_DELETED": "🤷‍♂️ That question's already gone.",
         "QUESTION_ONLY_AUTHOR_OR_CREATOR": "🔒 Only you or the creator can delete this.",
@@ -173,6 +176,9 @@ MESSAGES = {
         "QUESTION_REJECTED_ADMIN": "❌ Вопрос отклонён.",
         "QUESTION_APPROVED_AUTHOR": "✅ Твой вопрос одобрен! +{points}💎 на твой счёт.",
         "QUESTION_REJECTED_AUTHOR": "❌ Твой вопрос отклонён администратором.",
+        "USER_BANNED_ADMIN": "🚫 Пользователь {banned_nickname} забанен и удалён из группы.",
+        "USER_BANNED_NOTIFICATION": "🚫 Вы заблокированы в группе '{group_name}' за спам.",
+        "USER_BANNED_JOIN_ATTEMPT": "🚫 Вы заблокированы в этой группе и не можете присоединиться.",
         "QUESTION_DELETED": "🗑 Вопрос удалён.",
         "QUESTION_ALREADY_DELETED": "🤷‍♂️ Этот вопрос уже исчез.",
         "QUESTION_ONLY_AUTHOR_OR_CREATOR": "🔒 Только ты или создатель можете это удалить.",
@@ -375,4 +381,9 @@ QUESTION_ADMIN_APPROVAL = "QUESTION_ADMIN_APPROVAL"
 QUESTION_APPROVED_ADMIN = "QUESTION_APPROVED_ADMIN"
 QUESTION_REJECTED_ADMIN = "QUESTION_REJECTED_ADMIN"
 QUESTION_APPROVED_AUTHOR = "QUESTION_APPROVED_AUTHOR"
-QUESTION_REJECTED_AUTHOR = "QUESTION_REJECTED_AUTHOR" 
+QUESTION_REJECTED_AUTHOR = "QUESTION_REJECTED_AUTHOR"
+
+# User ban constants
+USER_BANNED_ADMIN = "USER_BANNED_ADMIN"
+USER_BANNED_NOTIFICATION = "USER_BANNED_NOTIFICATION" 
+USER_BANNED_JOIN_ATTEMPT = "USER_BANNED_JOIN_ATTEMPT" 

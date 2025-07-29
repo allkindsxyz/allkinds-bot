@@ -61,6 +61,21 @@ class GroupCreator(Base):
     user_id = Column(Integer, ForeignKey('users.id'), unique=True)
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
 
+class BannedUser(Base):
+    __tablename__ = 'banned_users'
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey('users.id', ondelete='CASCADE'), nullable=False)
+    group_id = Column(Integer, ForeignKey('groups.id', ondelete='CASCADE'), nullable=False)
+    banned_by = Column(Integer, ForeignKey('users.id', ondelete='CASCADE'), nullable=False)  # Admin who banned
+    banned_at = Column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
+    reason = Column(String(255), default="Spam questions")
+    
+    user = relationship('User', foreign_keys=[user_id])
+    group = relationship('Group')
+    admin = relationship('User', foreign_keys=[banned_by])
+    
+    __table_args__ = (UniqueConstraint('user_id', 'group_id', name='_banned_user_group_uc'),)
+
 class Question(Base):
     __tablename__ = 'questions'
     id = Column(Integer, primary_key=True)

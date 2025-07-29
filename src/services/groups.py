@@ -1,6 +1,6 @@
 from typing import List, Dict, Optional, Any
 from src.db import AsyncSessionLocal
-from src.models import User, Group, GroupMember, GroupCreator, Answer, Question, MatchStatus
+from src.models import User, Group, GroupMember, GroupCreator, Answer, Question, MatchStatus, BannedUser
 from src.keyboards.groups import get_admin_keyboard, get_user_keyboard, get_group_main_keyboard
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 import os, logging
@@ -8,7 +8,7 @@ from sqlalchemy import select, func
 from src.utils.invite_code import generate_unique_invite_code
 from src.constants import WELCOME_BONUS
 from src.utils.redis import get_or_restore_internal_user_id
-from src.texts.messages import get_message, GROUPS_JOIN_NOT_FOUND, GROUPS_JOINED, GROUPS_JOIN_ONBOARDING
+from src.texts.messages import get_message, GROUPS_JOIN_NOT_FOUND, GROUPS_JOINED, GROUPS_JOIN_ONBOARDING, USER_BANNED_JOIN_ATTEMPT
 from aiogram import types
 
 ADMIN_USER_ID = int(os.getenv('ADMIN_USER_ID', 0))
@@ -206,6 +206,14 @@ async def join_group_by_code_service(user_id: int, code: str) -> dict | None:
         group = group.scalar()
         if not group:
             return None
+        
+        # Check if user is banned from this group
+        banned_check = await session.execute(select(BannedUser).where(
+            BannedUser.user_id == user_id,
+            BannedUser.group_id == group.id
+        ))
+        if banned_check.scalar():
+            return {"error": "banned", "message": "You are banned from this group"}
         user = await session.execute(select(User).where(User.id == user_id))
         user = user.scalar()
         if not user:
@@ -571,6 +579,12 @@ async def handle_group_join(user_id: int, code: str, message, state) -> bool:
     if not group:
         logging.warning(f"[handle_group_join] Group not found for code: {code}")
         await message.answer(get_message(GROUPS_JOIN_NOT_FOUND, user=message.from_user))
+        return False
+    
+    # Check if user is banned
+    if group.get("error") == "banned":
+        logging.warning(f"[handle_group_join] User {user_id} is banned from group")
+        await message.answer(get_message(USER_BANNED_JOIN_ATTEMPT, user=message.from_user))
         return False
     
     logging.warning(f"[handle_group_join] Found group: {group['name']}, needs_onboarding: {group.get('needs_onboarding')}")

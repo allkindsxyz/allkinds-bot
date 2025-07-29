@@ -15,7 +15,7 @@ from src.services.questions import (
 from src.constants import POINTS_FOR_NEW_QUESTION, POINTS_FOR_ANSWER
 from src.db import AsyncSessionLocal
 from sqlalchemy import select, and_, delete
-from src.models import User, GroupMember, Question, Answer, Group
+from src.models import User, GroupMember, Question, Answer, Group, BannedUser, MatchStatus, Match
 from src.texts.messages import (
     get_message,
     QUESTION_TOO_SHORT, QUESTION_MUST_JOIN_GROUP, QUESTION_DUPLICATE, QUESTION_REJECTED, QUESTION_ADDED, QUESTION_DELETED,
@@ -23,7 +23,7 @@ from src.texts.messages import (
     QUESTION_NO_MORE_ANSWERED, QUESTION_CAN_CHANGE_ANSWER, QUESTION_INTERNAL_ERROR, QUESTION_LOAD_ANSWERED, QUESTION_LOAD_MORE,
     QUESTION_DELETE, UNANSWERED_QUESTIONS_MSG, BTN_LOAD_UNANSWERED, GROUPS_NO_NEW_QUESTIONS, NEW_QUESTION_NOTIFICATION,
     QUESTION_PENDING_APPROVAL, QUESTION_ADMIN_APPROVAL, QUESTION_APPROVED_ADMIN, QUESTION_REJECTED_ADMIN, 
-    QUESTION_APPROVED_AUTHOR, QUESTION_REJECTED_AUTHOR
+    QUESTION_APPROVED_AUTHOR, QUESTION_REJECTED_AUTHOR, USER_BANNED_ADMIN, USER_BANNED_NOTIFICATION
 )
 import logging
 from src.utils.redis import get_telegram_user_id, get_or_restore_internal_user_id, set_telegram_mapping
@@ -588,6 +588,9 @@ async def send_question_for_approval(bot, admin_user, question, author_user):
         [
             types.InlineKeyboardButton(text="✅ Approve", callback_data=f"approve_question_{question.id}"),
             types.InlineKeyboardButton(text="❌ Reject", callback_data=f"reject_question_{question.id}")
+        ],
+        [
+            types.InlineKeyboardButton(text="🚫 Ban User", callback_data=f"ban_user_{question.id}")
         ]
     ]
     kb = types.InlineKeyboardMarkup(inline_keyboard=keyboard)
@@ -728,4 +731,132 @@ async def cb_reject_question(callback: types.CallbackQuery, state: FSMContext):
                     await callback.bot.send_message(author_telegram_id,
                         get_message(QUESTION_REJECTED_AUTHOR, user=author))
                 except Exception:
-                    pass 
+                    pass
+
+@router.callback_query(F.data.startswith("ban_user_"))
+async def cb_ban_user(callback: types.CallbackQuery, state: FSMContext):
+    """Handle user ban by admin"""
+    question_id = int(callback.data.split("_")[-1])
+    
+    data = await state.get_data()
+    admin_user_id = data.get('internal_user_id')
+    if not admin_user_id:
+        await callback.answer("Please start the bot to use this feature.")
+        return
+    
+    async with AsyncSessionLocal() as session:
+        # Verify admin privileges
+        admin_user = await session.execute(select(User).where(User.id == admin_user_id))
+        admin_user = admin_user.scalar()
+        
+        question = await session.execute(select(Question).where(Question.id == question_id))
+        question = question.scalar()
+        if not question:
+            await callback.answer("Question not found.")
+            return
+            
+        group = await session.execute(select(Group).where(Group.id == question.group_id))
+        group = group.scalar()
+        if not group or group.creator_user_id != admin_user_id:
+            await callback.answer("You are not authorized to ban users.")
+            return
+        
+        banned_user_id = question.author_id
+        
+        # Check if user is already banned
+        existing_ban = await session.execute(select(BannedUser).where(
+            BannedUser.user_id == banned_user_id,
+            BannedUser.group_id == question.group_id
+        ))
+        if existing_ban.scalar():
+            await callback.answer("User is already banned.")
+            return
+        
+        # Get banned user info for notification
+        banned_user = await session.execute(select(User).where(User.id == banned_user_id))
+        banned_user = banned_user.scalar()
+        
+        # Get banned user's nickname before deleting membership
+        banned_member = await session.execute(select(GroupMember).where(
+            GroupMember.user_id == banned_user_id, 
+            GroupMember.group_id == question.group_id))
+        banned_member = banned_member.scalar()
+        banned_nickname = banned_member.nickname if banned_member and banned_member.nickname else f"User {banned_user_id}"
+        
+        # 1. Add to banned_users table
+        ban_record = BannedUser(
+            user_id=banned_user_id,
+            group_id=question.group_id,
+            banned_by=admin_user_id,
+            reason="Spam questions"
+        )
+        session.add(ban_record)
+        
+        # 2. Reject current question
+        question.status = "rejected"
+        
+        # 3. Delete ALL questions from this user in this group
+        await session.execute(
+            delete(Question).where(
+                Question.author_id == banned_user_id,
+                Question.group_id == question.group_id
+            )
+        )
+        
+        # 4. Delete ALL answers from this user in this group
+        await session.execute(
+            delete(Answer).where(
+                Answer.user_id == banned_user_id,
+                Answer.question_id.in_(
+                    select(Question.id).where(Question.group_id == question.group_id)
+                )
+            )
+        )
+        
+        # 5. Delete match statuses and matches involving this user
+        await session.execute(
+            delete(MatchStatus).where(
+                MatchStatus.group_id == question.group_id,
+                (MatchStatus.user_id == banned_user_id) | (MatchStatus.match_user_id == banned_user_id)
+            )
+        )
+        
+        await session.execute(
+            delete(Match).where(
+                Match.group_id == question.group_id,
+                (Match.user1_id == banned_user_id) | (Match.user2_id == banned_user_id)
+            )
+        )
+        
+        # 6. Remove from group membership
+        await session.execute(
+            delete(GroupMember).where(
+                GroupMember.user_id == banned_user_id,
+                GroupMember.group_id == question.group_id
+            )
+        )
+        
+        # 7. Reset current_group_id if this was their current group
+        if banned_user and banned_user.current_group_id == question.group_id:
+            banned_user.current_group_id = None
+        
+        await session.commit()
+        
+        # Delete admin moderation message
+        try:
+            await callback.message.delete()
+        except Exception:
+            pass
+        
+        # Notify admin of ban
+        await callback.message.answer(get_message(USER_BANNED_ADMIN, user=admin_user, banned_nickname=banned_nickname))
+        
+        # Notify banned user
+        if banned_user:
+            banned_telegram_id = await get_telegram_user_id(banned_user.id)
+            if banned_telegram_id:
+                try:
+                    await callback.bot.send_message(banned_telegram_id,
+                        get_message(USER_BANNED_NOTIFICATION, user=banned_user, group_name=group.name))
+                except Exception:
+                    pass
