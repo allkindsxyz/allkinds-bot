@@ -16,7 +16,7 @@ async def get_next_unanswered_question(session, group_id, user_id):
     await ensure_user_exists(session, user_id)
     q = await session.execute(
         select(Question).where(
-            and_(Question.group_id == group_id, Question.is_deleted == 0)
+            and_(Question.group_id == group_id, Question.is_deleted == 0, Question.status == "approved")
         ).order_by(Question.created_at)
     )
     questions = q.scalars().all()

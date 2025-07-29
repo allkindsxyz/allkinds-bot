@@ -48,6 +48,12 @@ MESSAGES = {
         "QUESTION_DUPLICATE": "🤔 That question's already here. Try another.",
         "QUESTION_REJECTED": "🚫 This question didn't pass moderation.",
         "QUESTION_ADDED": "🎉 Question added! +{points}💎 to your account.",
+        "QUESTION_PENDING_APPROVAL": "⏳ Your question is being reviewed by the admin.",
+        "QUESTION_ADMIN_APPROVAL": "📝 New question from {author_name}:\n\n{question_text}\n\nApprove or reject?",
+        "QUESTION_APPROVED_ADMIN": "✅ Question approved and sent to group members.",
+        "QUESTION_REJECTED_ADMIN": "❌ Question rejected.",
+        "QUESTION_APPROVED_AUTHOR": "✅ Your question was approved! +{points}💎 to your account.",
+        "QUESTION_REJECTED_AUTHOR": "❌ Your question was rejected by the admin.",
         "QUESTION_DELETED": "🗑 Question deleted.",
         "QUESTION_ALREADY_DELETED": "🤷‍♂️ That question's already gone.",
         "QUESTION_ONLY_AUTHOR_OR_CREATOR": "🔒 Only you or the creator can delete this.",
@@ -161,6 +167,12 @@ MESSAGES = {
         "QUESTION_DUPLICATE": "🤔 Такой вопрос уже есть. Попробуй другой.",
         "QUESTION_REJECTED": "🚫 Этот вопрос не прошёл модерацию.",
         "QUESTION_ADDED": "🎉 Вопрос добавлен! +{points}💎 на твой счёт.",
+        "QUESTION_PENDING_APPROVAL": "⏳ Твой вопрос отправлен на модерацию администратору.",
+        "QUESTION_ADMIN_APPROVAL": "📝 Новый вопрос от {author_name}:\n\n{question_text}\n\nОдобрить или отклонить?",
+        "QUESTION_APPROVED_ADMIN": "✅ Вопрос одобрен и отправлен участникам группы.",
+        "QUESTION_REJECTED_ADMIN": "❌ Вопрос отклонён.",
+        "QUESTION_APPROVED_AUTHOR": "✅ Твой вопрос одобрен! +{points}💎 на твой счёт.",
+        "QUESTION_REJECTED_AUTHOR": "❌ Твой вопрос отклонён администратором.",
         "QUESTION_DELETED": "🗑 Вопрос удалён.",
         "QUESTION_ALREADY_DELETED": "🤷‍♂️ Этот вопрос уже исчез.",
         "QUESTION_ONLY_AUTHOR_OR_CREATOR": "🔒 Только ты или создатель можете это удалить.",
@@ -355,4 +367,12 @@ TOKEN_EXTENDED = "TOKEN_EXTENDED"
 QUESTIONS_ALL_ANSWERED = "QUESTIONS_ALL_ANSWERED"
 
 NEW_QUESTION_NOTIFICATION = "NEW_QUESTION_NOTIFICATION"
-QUEUE_LOAD_UNANSWERED = "QUEUE_LOAD_UNANSWERED" 
+QUEUE_LOAD_UNANSWERED = "QUEUE_LOAD_UNANSWERED"
+
+# Question moderation constants
+QUESTION_PENDING_APPROVAL = "QUESTION_PENDING_APPROVAL"
+QUESTION_ADMIN_APPROVAL = "QUESTION_ADMIN_APPROVAL"
+QUESTION_APPROVED_ADMIN = "QUESTION_APPROVED_ADMIN"
+QUESTION_REJECTED_ADMIN = "QUESTION_REJECTED_ADMIN"
+QUESTION_APPROVED_AUTHOR = "QUESTION_APPROVED_AUTHOR"
+QUESTION_REJECTED_AUTHOR = "QUESTION_REJECTED_AUTHOR" 

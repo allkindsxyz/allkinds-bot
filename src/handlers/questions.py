@@ -21,7 +21,9 @@ from src.texts.messages import (
     QUESTION_TOO_SHORT, QUESTION_MUST_JOIN_GROUP, QUESTION_DUPLICATE, QUESTION_REJECTED, QUESTION_ADDED, QUESTION_DELETED,
     QUESTION_ALREADY_DELETED, QUESTION_ONLY_AUTHOR_OR_CREATOR, QUESTION_ANSWER_SAVED, QUESTION_NO_ANSWERED, QUESTION_MORE_ANSWERED,
     QUESTION_NO_MORE_ANSWERED, QUESTION_CAN_CHANGE_ANSWER, QUESTION_INTERNAL_ERROR, QUESTION_LOAD_ANSWERED, QUESTION_LOAD_MORE,
-    QUESTION_DELETE, UNANSWERED_QUESTIONS_MSG, BTN_LOAD_UNANSWERED, GROUPS_NO_NEW_QUESTIONS, NEW_QUESTION_NOTIFICATION
+    QUESTION_DELETE, UNANSWERED_QUESTIONS_MSG, BTN_LOAD_UNANSWERED, GROUPS_NO_NEW_QUESTIONS, NEW_QUESTION_NOTIFICATION,
+    QUESTION_PENDING_APPROVAL, QUESTION_ADMIN_APPROVAL, QUESTION_APPROVED_ADMIN, QUESTION_REJECTED_ADMIN, 
+    QUESTION_APPROVED_AUTHOR, QUESTION_REJECTED_AUTHOR
 )
 import logging
 from src.utils.redis import get_telegram_user_id, get_or_restore_internal_user_id, set_telegram_mapping
@@ -63,39 +65,33 @@ async def handle_new_question(message: types.Message, state: FSMContext):
         if not ok:
             await message.answer(reason or get_message(QUESTION_REJECTED, user=user))
             return
-        # Save question
-        q = Question(group_id=user.current_group_id, author_id=user.id, text=text)
+        # Save question with pending status (awaiting admin approval)
+        q = Question(group_id=user.current_group_id, author_id=user.id, text=text, status="pending")
         session.add(q)
-        # Award points to author
-        member = await session.execute(select(GroupMember).where(GroupMember.user_id == user.id, GroupMember.group_id == user.current_group_id))
-        member = member.scalar()
-        if member:
-            member.balance += POINTS_FOR_NEW_QUESTION
         await session.commit()
+        
+        # Get group admin/creator
+        group = await session.execute(select(Group).where(Group.id == user.current_group_id))
+        group = group.scalar()
+        admin_user = await session.execute(select(User).where(User.id == group.creator_user_id))
+        admin_user = admin_user.scalar()
+        
         try:
             await message.delete()
         except Exception:
             pass
-        info_msg = await message.answer(get_message(QUESTION_ADDED, user=user, points=POINTS_FOR_NEW_QUESTION))
-        await asyncio.sleep(1)
+        
+        # Notify author that question is pending approval
+        info_msg = await message.answer(get_message(QUESTION_PENDING_APPROVAL, user=user))
+        await asyncio.sleep(2)
         try:
             await info_msg.delete()
         except Exception:
             pass
-        # Показываем вопрос автору сразу (push)
-        from src.handlers.questions import send_question_to_user
-        await send_question_to_user(message.bot, user, q)
-    # Для остальных участников — обновляем бейджи и пушим только если нет очереди
-    async with AsyncSessionLocal() as session:
-        group_members = await session.execute(select(GroupMember, User).join(User).where(GroupMember.group_id == user.current_group_id))
-        group_members = group_members.all()
-        for gm, u in group_members:
-            if u.id == user.id:
-                continue
-            try:
-                await update_badge_for_new_question(message.bot, u, q)
-            except Exception as e:
-                logging.error(f"[handle_new_question] Failed to update badge for user_id={u.id}: {e}")
+        
+        # Send question to admin for approval
+        if admin_user:
+            await send_question_for_approval(message.bot, admin_user, q, user)
 
 @router.callback_query(F.data.startswith("answer_"))
 async def cb_answer_question(callback: types.CallbackQuery, state: FSMContext):
@@ -501,7 +497,8 @@ async def update_badge_for_new_question(bot, user, new_question):
         questions = await session.execute(
             select(Question).where(
                 Question.group_id == new_question.group_id,
-                Question.is_deleted == 0
+                Question.is_deleted == 0,
+                Question.status == "approved"
             )
         )
         questions = questions.scalars().all()
@@ -531,7 +528,8 @@ async def update_badge_after_answer(bot, user, group_id):
         questions = await session.execute(
             select(Question).where(
                 Question.group_id == group_id,
-                Question.is_deleted == 0
+                Question.is_deleted == 0,
+                Question.status == "approved"
             )
         )
         questions = questions.scalars().all()
@@ -562,4 +560,172 @@ async def cleanup_old_delivered_answers():
         await session.execute(
             delete(Answer).where(Answer.status == 'delivered', Answer.value.is_(None))
         )
-        await session.commit() 
+        await session.commit()
+
+async def send_question_for_approval(bot, admin_user, question, author_user):
+    """Send question to admin for approval"""
+    from src.utils.redis import get_telegram_user_id
+    
+    admin_telegram_id = await get_telegram_user_id(admin_user.id)
+    if not admin_telegram_id:
+        return
+    
+    # Get author nickname for the admin message
+    async with AsyncSessionLocal() as session:
+        author_member = await session.execute(select(GroupMember).where(
+            GroupMember.user_id == author_user.id, 
+            GroupMember.group_id == question.group_id))
+        author_member = author_member.scalar()
+        author_name = author_member.nickname if author_member and author_member.nickname else f"User {author_user.id}"
+    
+    # Send admin notification
+    admin_text = get_message(QUESTION_ADMIN_APPROVAL, user=admin_user, 
+                           author_name=author_name,
+                           question_text=question.text)
+    
+    # Admin approval buttons
+    keyboard = [
+        [
+            types.InlineKeyboardButton(text="✅ Approve", callback_data=f"approve_question_{question.id}"),
+            types.InlineKeyboardButton(text="❌ Reject", callback_data=f"reject_question_{question.id}")
+        ]
+    ]
+    kb = types.InlineKeyboardMarkup(inline_keyboard=keyboard)
+    
+    try:
+        await bot.send_message(admin_telegram_id, admin_text, reply_markup=kb, parse_mode="HTML")
+    except Exception as e:
+        logging.error(f"[send_question_for_approval] Failed to send to admin: {e}")
+
+@router.callback_query(F.data.startswith("approve_question_"))
+async def cb_approve_question(callback: types.CallbackQuery, state: FSMContext):
+    """Handle question approval by admin"""
+    question_id = int(callback.data.split("_")[-1])
+    
+    data = await state.get_data()
+    admin_user_id = data.get('internal_user_id')
+    if not admin_user_id:
+        await callback.answer("Please start the bot to use this feature.")
+        return
+    
+    async with AsyncSessionLocal() as session:
+        # Verify admin privileges
+        admin_user = await session.execute(select(User).where(User.id == admin_user_id))
+        admin_user = admin_user.scalar()
+        
+        question = await session.execute(select(Question).where(Question.id == question_id))
+        question = question.scalar()
+        if not question:
+            await callback.answer("Question not found.")
+            return
+            
+        group = await session.execute(select(Group).where(Group.id == question.group_id))
+        group = group.scalar()
+        if not group or group.creator_user_id != admin_user_id:
+            await callback.answer("You are not authorized to approve this question.")
+            return
+        
+        # Update question status to approved
+        question.status = "approved"
+        
+        # Award points to author
+        author = await session.execute(select(User).where(User.id == question.author_id))
+        author = author.scalar()
+        author_member = await session.execute(select(GroupMember).where(
+            GroupMember.user_id == question.author_id, 
+            GroupMember.group_id == question.group_id))
+        author_member = author_member.scalar()
+        
+        if author_member:
+            author_member.balance += POINTS_FOR_NEW_QUESTION
+        
+        await session.commit()
+        
+        # Delete admin approval message
+        try:
+            await callback.message.delete()
+        except Exception:
+            pass
+        
+        # Notify admin of approval
+        await callback.message.answer(get_message(QUESTION_APPROVED_ADMIN, user=admin_user))
+        
+        # Notify author of approval
+        if author:
+            author_telegram_id = await get_telegram_user_id(author.id)
+            if author_telegram_id:
+                try:
+                    await callback.bot.send_message(author_telegram_id, 
+                        get_message(QUESTION_APPROVED_AUTHOR, user=author, points=POINTS_FOR_NEW_QUESTION))
+                except Exception:
+                    pass
+        
+        # Send question to author first
+        if author:
+            await send_question_to_user(callback.bot, author, question)
+        
+        # Send to all other group members
+        group_members = await session.execute(select(GroupMember, User).join(User).where(
+            GroupMember.group_id == question.group_id))
+        group_members = group_members.all()
+        
+        for gm, u in group_members:
+            if u.id == question.author_id:  # Skip author, already sent
+                continue
+            try:
+                await update_badge_for_new_question(callback.bot, u, question)
+            except Exception as e:
+                logging.error(f"[cb_approve_question] Failed to update badge for user_id={u.id}: {e}")
+
+@router.callback_query(F.data.startswith("reject_question_"))  
+async def cb_reject_question(callback: types.CallbackQuery, state: FSMContext):
+    """Handle question rejection by admin"""
+    question_id = int(callback.data.split("_")[-1])
+    
+    data = await state.get_data()
+    admin_user_id = data.get('internal_user_id')
+    if not admin_user_id:
+        await callback.answer("Please start the bot to use this feature.")
+        return
+    
+    async with AsyncSessionLocal() as session:
+        # Verify admin privileges
+        admin_user = await session.execute(select(User).where(User.id == admin_user_id))
+        admin_user = admin_user.scalar()
+        
+        question = await session.execute(select(Question).where(Question.id == question_id))
+        question = question.scalar()
+        if not question:
+            await callback.answer("Question not found.")
+            return
+            
+        group = await session.execute(select(Group).where(Group.id == question.group_id))
+        group = group.scalar()
+        if not group or group.creator_user_id != admin_user_id:
+            await callback.answer("You are not authorized to reject this question.")
+            return
+        
+        # Update question status to rejected
+        question.status = "rejected"
+        await session.commit()
+        
+        # Delete admin approval message
+        try:
+            await callback.message.delete()
+        except Exception:
+            pass
+        
+        # Notify admin of rejection
+        await callback.message.answer(get_message(QUESTION_REJECTED_ADMIN, user=admin_user))
+        
+        # Notify author of rejection
+        author = await session.execute(select(User).where(User.id == question.author_id))
+        author = author.scalar()
+        if author:
+            author_telegram_id = await get_telegram_user_id(author.id)
+            if author_telegram_id:
+                try:
+                    await callback.bot.send_message(author_telegram_id,
+                        get_message(QUESTION_REJECTED_AUTHOR, user=author))
+                except Exception:
+                    pass 

@@ -70,6 +70,7 @@ class Question(Base):
     embedding = Column(String, nullable=True)  # for future AI
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
     is_deleted = Column(Integer, default=0)  # soft delete
+    status = Column(String(16), default="pending", nullable=False)  # 'pending', 'approved', 'rejected'
 
     group = relationship('Group')
     author = relationship('User')
