@@ -675,13 +675,16 @@ async def cb_approve_question(callback: types.CallbackQuery, state: FSMContext):
         
         await session.commit()
         
-        # Delete approval message
-        await callback.message.delete()
+        # Delete ALL moderation messages to keep chat clean
+        try:
+            await callback.message.delete()
+        except Exception:
+            pass
         
-        # Notify admin
-        await callback.message.answer(get_message(QUESTION_APPROVED_ADMIN, user=callback.from_user))
+        # Send brief confirmation to admin only
+        await callback.answer("✅ Question approved", show_alert=False)
         
-        # Notify author
+        # Notify author of approval
         author_telegram_id = await get_telegram_user_id(author_user.id)
         if author_telegram_id:
             await callback.bot.send_message(
@@ -689,7 +692,7 @@ async def cb_approve_question(callback: types.CallbackQuery, state: FSMContext):
                 get_message(QUESTION_APPROVED_AUTHOR, user={"language_code": "en"}, points=POINTS_FOR_NEW_QUESTION)
             )
         
-        # Send question to all group members with badge notifications
+        # Send question to all group members (including admin) with badge notifications
         await send_approved_question_to_users(callback.bot, question, author_user)
 
 @router.callback_query(F.data.startswith("reject_question_"))  
@@ -874,33 +877,41 @@ async def cb_ban_user(callback: types.CallbackQuery, state: FSMContext):
                     pass
 
 async def send_approved_question_to_users(bot, question, author_user):
-    """Send approved question to author first, then to other group members"""
+    """Send approved question to author first, then to all group members"""
     # Send to author first
     await send_question_to_user(bot, author_user, question)
     
-    # Send to other group members
+    # Send to ALL group members (including admin)
     async with AsyncSessionLocal() as session:
+        # Get the group to find admin
+        group = await session.execute(select(Group).where(Group.id == question.group_id))
+        group = group.scalar()
+        admin_user_id = group.creator_user_id if group else None
+        
         members = await session.execute(
-            select(GroupMember).where(
-                and_(
-                    GroupMember.group_id == question.group_id,
-                    GroupMember.user_id != author_user.id
-                )
-            )
+            select(GroupMember).where(GroupMember.group_id == question.group_id)
         )
         
         for member in members.scalars().all():
             user = await session.execute(select(User).where(User.id == member.user_id))
             user = user.scalar()
             if user:
+                # Skip author since they already got the question
+                if user.id == author_user.id:
+                    continue
+                    
                 # Check if user has unanswered questions in queue
                 unanswered_count = await get_unanswered_questions_count(user.id, question.group_id)
                 
                 if unanswered_count == 0:  # Queue is empty, push immediately
                     await send_question_to_user(bot, user, question)
-                    # Send badge notification for new question
-                    await send_badge_notification(bot, user.id, "📝 New question available!")
+                    
+                    # Send badge notification only to non-admin users
+                    # Admin already knows about the question since they just approved it
+                    if user.id != admin_user_id:
+                        await send_badge_notification(bot, user.id, "📝 New question available!")
                 else:
                     # User has questions in queue, just send badge notification
                     # Question will be shown when they finish current queue
-                    await send_badge_notification(bot, user.id, "📝 New question available!")
+                    if user.id != admin_user_id:
+                        await send_badge_notification(bot, user.id, "📝 New question available!")
