@@ -27,6 +27,7 @@ from src.texts.messages import (
 )
 import logging
 from src.utils.redis import get_telegram_user_id, get_or_restore_internal_user_id, set_telegram_mapping
+from src.utils.badges import send_badge_notification, get_unanswered_questions_count, log_badge_decrement
 
 router = Router()
 
@@ -190,6 +191,11 @@ async def cb_answer_question(callback: types.CallbackQuery, state: FSMContext):
                 logging.warning(f"  Question {q.id}: '{q.text[:30]}...' - Has answer: {has_answer}")
         # Update badge after answer (always)
         await update_badge_after_answer(callback.bot, user, question.group_id)
+
+        # Log badge decrement (answered question)
+        await log_badge_decrement(user.id, "answered_question")
+        
+        # Show updated balance with points earned
 
 @router.callback_query(F.data.startswith("delete_question_"))
 async def cb_delete_question(callback: types.CallbackQuery, state: FSMContext):
@@ -622,84 +628,68 @@ async def send_question_for_approval(bot, admin_user, question, author_user):
         logging.error(f"[send_question_for_approval] Failed to send to admin: {e}")
 
 @router.callback_query(F.data.startswith("approve_question_"))
-async def cb_approve_question(callback: types.CallbackQuery, state: FSMContext):
-    """Handle question approval by admin"""
-    question_id = int(callback.data.split("_")[-1])
-    
-    data = await state.get_data()
-    admin_user_id = data.get('internal_user_id')
-    if not admin_user_id:
-        await callback.answer("Please start the bot to use this feature.")
-        return
+async def cb_approve_question(callback: types.CallbackQuery):
+    """Admin approves a question"""
+    question_id = int(callback.data.split("_")[2])
     
     async with AsyncSessionLocal() as session:
-        # Verify admin privileges
-        admin_user = await session.execute(select(User).where(User.id == admin_user_id))
-        admin_user = admin_user.scalar()
-        
+        # Get question
         question = await session.execute(select(Question).where(Question.id == question_id))
         question = question.scalar()
         if not question:
-            await callback.answer("Question not found.")
-            return
-            
-        group = await session.execute(select(Group).where(Group.id == question.group_id))
-        group = group.scalar()
-        if not group or group.creator_user_id != admin_user_id:
-            await callback.answer("You are not authorized to approve this question.")
+            await callback.answer("Question not found", show_alert=True)
             return
         
-        # Update question status to approved
+        # Get group to verify admin
+        group = await session.execute(select(Group).where(Group.id == question.group_id))
+        group = group.scalar()
+        if not group:
+            await callback.answer("Group not found", show_alert=True)
+            return
+        
+        # Verify admin privileges
+        admin_user_id = await get_or_restore_internal_user_id(callback.from_user.id)
+        if group.creator_user_id != admin_user_id:
+            await callback.answer("❌ Access denied. Only group admin can approve questions.", show_alert=True)
+            return
+        
+        # Get question author
+        author_user = await session.execute(select(User).where(User.id == question.user_id))
+        author_user = author_user.scalar()
+        if not author_user:
+            await callback.answer("Author not found", show_alert=True)
+            return
+        
+        # Approve question
         question.status = "approved"
         
         # Award points to author
-        author = await session.execute(select(User).where(User.id == question.author_id))
-        author = author.scalar()
         author_member = await session.execute(select(GroupMember).where(
-            GroupMember.user_id == question.author_id, 
-            GroupMember.group_id == question.group_id))
+            GroupMember.user_id == author_user.id,
+            GroupMember.group_id == question.group_id
+        ))
         author_member = author_member.scalar()
-        
         if author_member:
             author_member.balance += POINTS_FOR_NEW_QUESTION
         
         await session.commit()
         
-        # Delete admin approval message
-        try:
-            await callback.message.delete()
-        except Exception:
-            pass
+        # Delete approval message
+        await callback.message.delete()
         
-        # Notify admin of approval
-        await callback.message.answer(get_message(QUESTION_APPROVED_ADMIN, user=admin_user))
+        # Notify admin
+        await callback.message.answer(get_message(QUESTION_APPROVED_ADMIN, user=callback.from_user))
         
-        # Notify author of approval
-        if author:
-            author_telegram_id = await get_telegram_user_id(author.id)
-            if author_telegram_id:
-                try:
-                    await callback.bot.send_message(author_telegram_id, 
-                        get_message(QUESTION_APPROVED_AUTHOR, user=author, points=POINTS_FOR_NEW_QUESTION))
-                except Exception:
-                    pass
+        # Notify author
+        author_telegram_id = await get_telegram_user_id(author_user.id)
+        if author_telegram_id:
+            await callback.bot.send_message(
+                author_telegram_id,
+                get_message(QUESTION_APPROVED_AUTHOR, user={"language_code": "en"}, points=POINTS_FOR_NEW_QUESTION)
+            )
         
-        # Send question to author first
-        if author:
-            await send_question_to_user(callback.bot, author, question)
-        
-        # Send to all other group members
-        group_members = await session.execute(select(GroupMember, User).join(User).where(
-            GroupMember.group_id == question.group_id))
-        group_members = group_members.all()
-        
-        for gm, u in group_members:
-            if u.id == question.author_id:  # Skip author, already sent
-                continue
-            try:
-                await update_badge_for_new_question(callback.bot, u, question)
-            except Exception as e:
-                logging.error(f"[cb_approve_question] Failed to update badge for user_id={u.id}: {e}")
+        # Send question to all group members with badge notifications
+        await send_approved_question_to_users(callback.bot, question, author_user)
 
 @router.callback_query(F.data.startswith("reject_question_"))  
 async def cb_reject_question(callback: types.CallbackQuery, state: FSMContext):
@@ -881,3 +871,35 @@ async def cb_ban_user(callback: types.CallbackQuery, state: FSMContext):
                         get_message(USER_BANNED_NOTIFICATION, user=banned_user, group_name=group.name))
                 except Exception:
                     pass
+
+async def send_approved_question_to_users(bot, question, author_user):
+    """Send approved question to author first, then to other group members"""
+    # Send to author first
+    await send_question_to_user(bot, author_user, question)
+    
+    # Send to other group members
+    async with AsyncSessionLocal() as session:
+        members = await session.execute(
+            select(GroupMember).where(
+                and_(
+                    GroupMember.group_id == question.group_id,
+                    GroupMember.user_id != author_user.id
+                )
+            )
+        )
+        
+        for member in members.scalars().all():
+            user = await session.execute(select(User).where(User.id == member.user_id))
+            user = user.scalar()
+            if user:
+                # Check if user has unanswered questions in queue
+                unanswered_count = await get_unanswered_questions_count(user.id, question.group_id)
+                
+                if unanswered_count == 0:  # Queue is empty, push immediately
+                    await send_question_to_user(bot, user, question)
+                    # Send badge notification for new question
+                    await send_badge_notification(bot, user.id, "📝 New question available!")
+                else:
+                    # User has questions in queue, just send badge notification
+                    # Question will be shown when they finish current queue
+                    await send_badge_notification(bot, user.id, "📝 New question available!")

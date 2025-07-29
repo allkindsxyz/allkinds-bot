@@ -15,6 +15,7 @@ from src.keyboards.groups import get_user_keyboard, get_admin_keyboard, get_grou
 from src.utils.redis import get_internal_user_id, set_telegram_mapping, update_ttl, get_or_restore_internal_user_id
 from src.constants import WELCOME_BONUS
 import os
+from src.utils.badges import send_initial_badge_if_needed
 
 router = Router()
 print('System router loaded')
@@ -284,7 +285,10 @@ async def start(message: types.Message, state: FSMContext):
                             await send_question_to_user(message.bot, user_obj, q)
                             break
         
-        # --- PUSH пендинг входящих запросов на подключение ---
+        # Send initial badge if user has pending questions/matches
+        await send_initial_badge_if_needed(message.bot, internal_user_id, user_obj.current_group_id if user_obj else None)
+        
+        # Send pending connection requests if any
         await send_pending_connection_requests(message.bot, internal_user_id)
         return
     except Exception as e:

@@ -34,6 +34,7 @@ from src.texts.messages import (
     GROUPS_LEFT_SUCCESS, GROUPS_LEFT_ERROR, GROUPS_DELETED_SUCCESS, GROUPS_DELETED_ERROR
 )
 from src.utils.redis import get_or_restore_internal_user_id, get_telegram_user_id
+from src.utils.badges import send_badge_notification, log_badge_decrement
 
 router = Router()
 
@@ -1080,73 +1081,94 @@ async def cb_connect(callback: types.CallbackQuery, state: FSMContext):
     )
     
     # Send notification to second user
-    await send_connection_request_to_user(callback.bot, user, match_user, member, match_member, group_id)
+    await send_connection_request_to_user(callback.bot, user.id, match_user.id, group_id)
     
     await callback.answer()
 
-async def send_connection_request_to_user(bot, initiator_user, target_user, initiator_member, target_member, group_id):
-    """Отправить уведомление о запросе на подключение"""
-    from src.utils.redis import get_telegram_user_id
+async def send_connection_request_to_user(bot, initiator_user_id: int, target_user_id: int, group_id: int):
+    """Send connection request notification to target user"""
     from src.services.groups import find_best_match
     
-    target_telegram_user_id = await get_telegram_user_id(target_user.id)
-    if not target_telegram_user_id:
-        import logging
-        logging.error(f"[send_connection_request] No telegram_user_id in Redis for user_id={target_user.id}")
-        return
-    
     try:
-        # Get match data for display
-        reverse_match = await find_best_match(target_user.id, group_id, exclude_user_ids=[])
-        if reverse_match and reverse_match.get('user_id') == initiator_user.id:
-            similarity = reverse_match['similarity']
-            common_questions = reverse_match['common_questions']
-            valid_users_count = reverse_match['valid_users_count']
-        else:
-            # Fallback values
-            similarity = 85
-            common_questions = 3
-            valid_users_count = 2
-        
-        # First message about connection request
-        request_text = get_message("MATCH_INCOMING_REQUEST", user=target_user, 
-                                 nickname=initiator_member.nickname if initiator_member else "Unknown")
-        
-        # Then match card
-        intro_text = f"\n{initiator_member.intro}" if initiator_member and initiator_member.intro else ""
-        match_text = get_message("MATCH_FOUND", user=target_user, 
-                               nickname=initiator_member.nickname if initiator_member else "Unknown", 
-                               intro=intro_text, similarity=similarity, 
-                               common_questions=common_questions, valid_users_count=valid_users_count)
-        
-        # Buttons for accept/decline/block
-        kb = types.InlineKeyboardMarkup(inline_keyboard=[
-            [
-                types.InlineKeyboardButton(text=get_message("BTN_ACCEPT_MATCH", user=target_user), 
-                                         callback_data=f"accept_match_{initiator_user.id}"),
-                types.InlineKeyboardButton(text=get_message("BTN_DECLINE_MATCH", user=target_user), 
-                                         callback_data=f"decline_match_{initiator_user.id}")
-            ],
-            [
-                types.InlineKeyboardButton(text=get_message("BTN_BLOCK_MATCH", user=target_user), 
-                                         callback_data=f"block_match_{initiator_user.id}")
-            ]
-        ])
-        
-        # Send notification to target user
-        await bot.send_message(target_telegram_user_id, request_text, parse_mode="HTML")
-        
-        # Send match card with photo and buttons
-        if initiator_member and initiator_member.photo_url:
-            await bot.send_photo(target_telegram_user_id, initiator_member.photo_url, 
-                               caption=match_text, reply_markup=kb, parse_mode="HTML")
-        else:
-            await bot.send_message(target_telegram_user_id, match_text, 
-                                 reply_markup=kb, parse_mode="HTML")
+        async with AsyncSessionLocal() as session:
+            # Get users and member info
+            initiator = await session.execute(select(User).where(User.id == initiator_user_id))
+            initiator = initiator.scalar()
+            
+            target = await session.execute(select(User).where(User.id == target_user_id))
+            target = target.scalar()
+            
+            initiator_member = await session.execute(select(GroupMember).where(
+                GroupMember.user_id == initiator_user_id,
+                GroupMember.group_id == group_id
+            ))
+            initiator_member = initiator_member.scalar()
+            
+            if not all([initiator, target, initiator_member]):
+                return False
+            
+            target_telegram_id = await get_telegram_user_id(target_user_id)
+            if not target_telegram_id:
+                return False
+            
+            # Send badge notification for incoming match request
+            await send_badge_notification(bot, target_user_id, "💝 Someone wants to connect with you!")
+            
+            # Send incoming request message
+            # Get match data for display
+            reverse_match = await find_best_match(target_user_id, group_id, exclude_user_ids=[])
+            if reverse_match and reverse_match.get('user_id') == initiator_user_id:
+                similarity = reverse_match['similarity']
+                common_questions = reverse_match['common_questions']
+                valid_users_count = reverse_match['valid_users_count']
+            else:
+                # Fallback values
+                similarity = 85
+                common_questions = 3
+                valid_users_count = 2
+            
+            # First message about connection request
+            request_text = get_message("MATCH_INCOMING_REQUEST", user=target, 
+                                     nickname=initiator_member.nickname if initiator_member else "Unknown")
+            
+            # Then match card
+            intro_text = f"\n{initiator_member.intro}" if initiator_member and initiator_member.intro else ""
+            match_text = get_message("MATCH_FOUND", user=target, 
+                                   nickname=initiator_member.nickname if initiator_member else "Unknown", 
+                                   intro=intro_text, similarity=similarity, 
+                                   common_questions=common_questions, valid_users_count=valid_users_count)
+            
+            # Buttons for accept/decline/block
+            kb = types.InlineKeyboardMarkup(inline_keyboard=[
+                [
+                    types.InlineKeyboardButton(text=get_message("BTN_ACCEPT_MATCH", user=target), 
+                                             callback_data=f"accept_match_{initiator_user_id}"),
+                    types.InlineKeyboardButton(text=get_message("BTN_DECLINE_MATCH", user=target), 
+                                             callback_data=f"decline_match_{initiator_user_id}")
+                ],
+                [
+                    types.InlineKeyboardButton(text=get_message("BTN_BLOCK_MATCH", user=target), 
+                                             callback_data=f"block_match_{initiator_user_id}")
+                ]
+            ])
+            
+            # Send notification to target user
+            await bot.send_message(target_telegram_id, request_text, parse_mode="HTML")
+            
+            # Send match card with photo and buttons
+            if initiator_member and initiator_member.photo_url:
+                await bot.send_photo(target_telegram_id, initiator_member.photo_url, 
+                                   caption=match_text, reply_markup=kb, parse_mode="HTML")
+            else:
+                await bot.send_message(target_telegram_id, match_text, 
+                                     reply_markup=kb, parse_mode="HTML")
+            
+            return True
             
     except Exception as e:
         import logging
-        logging.error(f"[send_connection_request] Failed to send request to user_id={target_user.id}: {e}")
+        logging.error(f"[send_connection_request] Failed to send request to user_id={target_user_id}: {e}")
+        return False
 
 async def notify_successful_match_and_exchange_contacts(bot, user1, user2, member1, member2):
     """Уведомить об успешном мэтче и обменяться контактами"""
@@ -1267,6 +1289,9 @@ async def cb_accept_match(callback: types.CallbackQuery, state: FSMContext):
         
         await session.commit()
     
+    # Log badge decrement (accepted match request)
+    await log_badge_decrement(user_id, "accepted_match_request")
+    
     # Delete request messages
     try:
         await callback.message.delete()
@@ -1326,6 +1351,9 @@ async def cb_decline_match(callback: types.CallbackQuery, state: FSMContext):
             match_status.status = "declined"
         
         await session.commit()
+    
+    # Log badge decrement (declined match request)  
+    await log_badge_decrement(user_id, "declined_match_request")
     
     # Delete request messages
     try:
@@ -1388,6 +1416,9 @@ async def cb_block_match(callback: types.CallbackQuery, state: FSMContext):
         if match_status:
             match_status.status = "rejected"
         await session.commit()
+    
+    # Log badge decrement (blocked match request)
+    await log_badge_decrement(user_id, "blocked_match_request")
     
     # Delete request messages
     try:
