@@ -587,12 +587,29 @@ async def cb_find_match(callback: types.CallbackQuery, state: FSMContext):
             if 'distance_info' in matches[0]:
                 logging.warning(f"[cb_find_match] First match distance_info: {matches[0]['distance_info']}")
         
-        # Clear old cached data to ensure fresh results
+        # Clear old cached data to ensure fresh results (more aggressive)
         from src.utils.redis import redis
         import json
+        logging.warning(f"[cb_find_match] Clearing all cache for user {user_id}")
+        
+        # Clear multiple possible cache keys
         await redis.delete(f"matches_{user_id}")
         await redis.delete(f"viewed_matches_{user_id}_{group_id}")
-        logging.warning(f"[cb_find_match] Cleared cache for user {user_id}")
+        
+        # Also clear any Redis keys that might be lingering
+        cursor = 0
+        while True:
+            cursor, keys = await redis.scan(cursor, match=f"*{user_id}*", count=100)
+            if keys:
+                logging.warning(f"[cb_find_match] Found {len(keys)} Redis keys for user {user_id}: {keys}")
+                for key in keys:
+                    if b'matches' in key or b'viewed' in key:
+                        await redis.delete(key)
+                        logging.warning(f"[cb_find_match] Deleted Redis key: {key}")
+            if cursor == 0:
+                break
+        
+        logging.warning(f"[cb_find_match] Cache clearing completed for user {user_id}")
         
         # Deduct points for first match
         member.balance -= POINTS_FOR_MATCH
@@ -729,7 +746,8 @@ async def cb_match_nav(callback: types.CallbackQuery, state: FSMContext):
             logging.warning(f"[cb_match_nav] First match keys: {list(matches[0].keys())}")
             logging.warning(f"[cb_match_nav] Has distance_info: {'distance_info' in matches[0]}")
         
-        if matches and 'distance_info' not in matches[0]:
+        if matches and ('distance_info' not in matches[0] or 
+                        matches[0].get('distance_info') == '📍 Location not specified'):
             logging.warning(f"[cb_match_nav] Regenerating matches with distance_info for user {internal_user_id}, group {user.current_group_id}")
             # Regenerate matches with distance_info
             from src.services.groups import find_all_matches
@@ -737,10 +755,16 @@ async def cb_match_nav(callback: types.CallbackQuery, state: FSMContext):
             logging.warning(f"[cb_match_nav] Regenerated {len(matches)} matches")
             if matches:
                 logging.warning(f"[cb_match_nav] New match keys: {list(matches[0].keys())}")
+                if 'distance_info' in matches[0]:
+                    logging.warning(f"[cb_match_nav] New distance_info: {matches[0]['distance_info']}")
                 # Update cache with new data
                 matches_data = json.dumps(matches)
                 await redis.set(f"matches_{internal_user_id}", matches_data, ex=300)
                 logging.warning(f"[cb_match_nav] Updated cache for user {internal_user_id}")
+            else:
+                logging.warning(f"[cb_match_nav] No matches regenerated!")
+        elif matches:
+            logging.warning(f"[cb_match_nav] Using existing matches, distance_info: {matches[0].get('distance_info', 'MISSING')}")
         
         group_id = user.current_group_id
         member = await session.execute(select(GroupMember).where(
