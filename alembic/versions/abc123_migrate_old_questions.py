@@ -1,8 +1,8 @@
-"""migrate old questions to approved status
+"""migrate old questions to approved
 
-Revision ID: migrate_old_questions_to_approved
+Revision ID: abc123_migrate_old_questions
 Revises: add_banned_users_table
-Create Date: 2025-01-28 14:00:00.000000
+Create Date: 2025-01-28 14:15:00.000000
 
 """
 from typing import Sequence, Union
@@ -12,7 +12,7 @@ import sqlalchemy as sa
 
 
 # revision identifiers, used by Alembic.
-revision: str = 'migrate_old_questions_to_approved'
+revision: str = 'abc123_migrate_old_questions'
 down_revision: Union[str, None] = 'add_banned_users_table'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
