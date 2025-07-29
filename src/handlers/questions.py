@@ -655,7 +655,7 @@ async def cb_approve_question(callback: types.CallbackQuery, state: FSMContext):
             return
         
         # Get question author
-        author_user = await session.execute(select(User).where(User.id == question.user_id))
+        author_user = await session.execute(select(User).where(User.id == question.author_id))
         author_user = author_user.scalar()
         if not author_user:
             await callback.answer("Author not found", show_alert=True)
