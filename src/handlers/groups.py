@@ -551,6 +551,14 @@ async def cb_find_match(callback: types.CallbackQuery, state: FSMContext):
         member.balance -= POINTS_FOR_MATCH
         await session.commit()
         
+        # Mark first match as viewed
+        from src.utils.redis import redis
+        import json
+        first_match_user_id = matches[0]['user_id']
+        viewed_matches = {first_match_user_id}
+        await redis.setex(f"viewed_matches_{user_id}_{group_id}", 
+                        3600, json.dumps(list(viewed_matches)))  # 1 hour TTL
+        
         # Show first match with navigation
         await show_match_with_navigation(callback, user, matches, 0)
 
@@ -671,15 +679,35 @@ async def cb_match_nav(callback: types.CallbackQuery, state: FSMContext):
                 current_index = i
                 break
         
-        if new_index > current_index:  # Going forward - charge points
-            if member.balance < POINTS_FOR_MATCH:
-                await callback.answer(get_message(MATCH_NOT_ENOUGH_POINTS, user=callback.from_user))
-                return
-            old_balance = member.balance
-            member.balance -= POINTS_FOR_MATCH
-            await session.commit()
-            # Show balance change popup
-            await callback.answer(f"💎 Balance: {member.balance} (-{POINTS_FOR_MATCH})", show_alert=False)
+        # Get viewed matches from Redis
+        viewed_matches_data = await redis.get(f"viewed_matches_{internal_user_id}_{group_id}")
+        viewed_matches = set()
+        if viewed_matches_data:
+            viewed_matches = set(json.loads(viewed_matches_data))
+        
+        if new_index > current_index:  # Going forward
+            # Check if this match was already viewed
+            target_match_user_id = matches[new_index]['user_id']
+            is_new_match = target_match_user_id not in viewed_matches
+            
+            if is_new_match:  # Charge points only for new matches
+                if member.balance < POINTS_FOR_MATCH:
+                    await callback.answer(get_message(MATCH_NOT_ENOUGH_POINTS, user=callback.from_user))
+                    return
+                old_balance = member.balance
+                member.balance -= POINTS_FOR_MATCH
+                await session.commit()
+                
+                # Mark this match as viewed
+                viewed_matches.add(target_match_user_id)
+                await redis.setex(f"viewed_matches_{internal_user_id}_{group_id}", 
+                                3600, json.dumps(list(viewed_matches)))  # 1 hour TTL
+                
+                # Show balance change popup
+                await callback.answer(f"💎 Balance: {member.balance} (-{POINTS_FOR_MATCH})", show_alert=False)
+            else:
+                # Already viewed - free navigation
+                await callback.answer(f"💎 Balance: {member.balance}", show_alert=False)
         else:
             # Free navigation backwards - just show current balance
             await callback.answer(f"💎 Balance: {member.balance}", show_alert=False)
