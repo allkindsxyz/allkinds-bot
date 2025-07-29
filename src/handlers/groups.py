@@ -609,10 +609,18 @@ async def cb_find_match(callback: types.CallbackQuery, state: FSMContext):
 
 async def show_match_with_navigation(callback_or_message, user, matches: list, index: int):
     """Display match with navigation buttons"""
+    import logging
+    logging.warning(f"[show_match_with_navigation] Called with {len(matches)} matches, index {index}")
+    
     if not matches or index < 0 or index >= len(matches):
+        logging.warning(f"[show_match_with_navigation] Invalid parameters: matches={len(matches) if matches else 0}, index={index}")
         return
     
     match = matches[index]
+    logging.warning(f"[show_match_with_navigation] Match data keys: {list(match.keys())}")
+    logging.warning(f"[show_match_with_navigation] Match has distance_info: {'distance_info' in match}")
+    if 'distance_info' in match:
+        logging.warning(f"[show_match_with_navigation] Distance info: {match['distance_info']}")
     
     # Format intro text
     intro_text = ""
@@ -624,7 +632,9 @@ async def show_match_with_navigation(callback_or_message, user, matches: list, i
                       intro=intro_text,
                       similarity=match['similarity'], 
                       common_questions=match['common_questions'], 
-                      distance_info=match['distance_info'])
+                      distance_info=match.get('distance_info', '📍 Location not specified'))
+    
+    logging.warning(f"[show_match_with_navigation] Final message text: {text[:100]}...")
     
     # Build navigation buttons
     nav_buttons = []
@@ -958,7 +968,8 @@ async def cb_match_chat(callback: types.CallbackQuery, state: FSMContext):
         # Then match card
         intro_text = member.intro if member and member.intro else ""
         match_text = get_message(MATCH_FOUND, user=match_user, nickname=member.nickname if member else "Unknown", 
-                               intro=intro_text, similarity=similarity, common_questions=common_questions, distance_info=distance_info)
+                               intro=intro_text, similarity=similarity, common_questions=common_questions, 
+                               distance_info=distance_info if 'distance_info' in locals() else "📍 Location not specified")
         
         # Buttons for accept/decline/block
         kb = types.InlineKeyboardMarkup(inline_keyboard=[
@@ -1179,7 +1190,8 @@ async def send_connection_request_to_user(bot, initiator_user_id: int, target_us
             match_text = get_message("MATCH_FOUND", user=target, 
                                    nickname=initiator_member.nickname if initiator_member else "Unknown", 
                                    intro=intro_text, similarity=similarity, 
-                                   common_questions=common_questions, distance_info=distance_info)
+                                   common_questions=common_questions, 
+                                   distance_info=distance_info if 'distance_info' in locals() else "📍 Location not specified")
             
             # Buttons for accept/decline/block
             kb = types.InlineKeyboardMarkup(inline_keyboard=[

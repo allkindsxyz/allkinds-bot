@@ -85,7 +85,8 @@ async def send_pending_connection_requests(bot, user_id: int):
                 match_text = get_message("MATCH_FOUND", user=user, 
                                        nickname=initiator_member.nickname if initiator_member else "Unknown", 
                                        intro=intro_text, similarity=similarity, 
-                                       common_questions=common_questions, distance_info=distance_info)
+                                       common_questions=common_questions, 
+                                       distance_info=distance_info if 'distance_info' in locals() else "📍 Location not specified")
                 
                 # Кнопки для ответа
                 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
