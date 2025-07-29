@@ -579,13 +579,17 @@ async def cb_find_match(callback: types.CallbackQuery, state: FSMContext):
             await callback.answer(get_message(MATCH_NO_VALID, user=callback.from_user, show_alert=True))
             return
         
+        # Clear old cached data to ensure fresh results
+        from src.utils.redis import redis
+        import json
+        await redis.delete(f"matches_{user_id}")
+        await redis.delete(f"viewed_matches_{user_id}_{group_id}")
+        
         # Deduct points for first match
         member.balance -= POINTS_FOR_MATCH
         await session.commit()
         
         # Mark first match as viewed
-        from src.utils.redis import redis
-        import json
         first_match_user_id = matches[0]['user_id']
         viewed_matches = {first_match_user_id}
         await redis.setex(f"viewed_matches_{user_id}_{group_id}", 
@@ -698,6 +702,16 @@ async def cb_match_nav(callback: types.CallbackQuery, state: FSMContext):
         if not user:
             await callback.answer("User not found.")
             return
+        
+        # Check if cached matches have distance_info (new feature)
+        if matches and 'distance_info' not in matches[0]:
+            # Regenerate matches with distance_info
+            from src.services.groups import find_all_matches
+            matches = await find_all_matches(internal_user_id, user.current_group_id)
+            if matches:
+                # Update cache with new data
+                matches_data = json.dumps(matches)
+                await redis.set(f"matches_{internal_user_id}", matches_data, ex=300)
         
         group_id = user.current_group_id
         member = await session.execute(select(GroupMember).where(
