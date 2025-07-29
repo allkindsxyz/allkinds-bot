@@ -579,11 +579,20 @@ async def cb_find_match(callback: types.CallbackQuery, state: FSMContext):
             await callback.answer(get_message(MATCH_NO_VALID, user=callback.from_user, show_alert=True))
             return
         
+        # Debug logging for matches
+        import logging
+        logging.warning(f"[cb_find_match] Generated {len(matches)} matches for user {user_id}")
+        if matches:
+            logging.warning(f"[cb_find_match] First match keys: {list(matches[0].keys())}")
+            if 'distance_info' in matches[0]:
+                logging.warning(f"[cb_find_match] First match distance_info: {matches[0]['distance_info']}")
+        
         # Clear old cached data to ensure fresh results
         from src.utils.redis import redis
         import json
         await redis.delete(f"matches_{user_id}")
         await redis.delete(f"viewed_matches_{user_id}_{group_id}")
+        logging.warning(f"[cb_find_match] Cleared cache for user {user_id}")
         
         # Deduct points for first match
         member.balance -= POINTS_FOR_MATCH
@@ -704,14 +713,24 @@ async def cb_match_nav(callback: types.CallbackQuery, state: FSMContext):
             return
         
         # Check if cached matches have distance_info (new feature)
+        import logging
+        logging.warning(f"[cb_match_nav] Checking cached matches. Count: {len(matches)}")
+        if matches:
+            logging.warning(f"[cb_match_nav] First match keys: {list(matches[0].keys())}")
+            logging.warning(f"[cb_match_nav] Has distance_info: {'distance_info' in matches[0]}")
+        
         if matches and 'distance_info' not in matches[0]:
+            logging.warning(f"[cb_match_nav] Regenerating matches with distance_info for user {internal_user_id}, group {user.current_group_id}")
             # Regenerate matches with distance_info
             from src.services.groups import find_all_matches
             matches = await find_all_matches(internal_user_id, user.current_group_id)
+            logging.warning(f"[cb_match_nav] Regenerated {len(matches)} matches")
             if matches:
+                logging.warning(f"[cb_match_nav] New match keys: {list(matches[0].keys())}")
                 # Update cache with new data
                 matches_data = json.dumps(matches)
                 await redis.set(f"matches_{internal_user_id}", matches_data, ex=300)
+                logging.warning(f"[cb_match_nav] Updated cache for user {internal_user_id}")
         
         group_id = user.current_group_id
         member = await session.execute(select(GroupMember).where(
