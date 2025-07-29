@@ -183,6 +183,10 @@ async def onboarding_location(message: types.Message, state: FSMContext):
             )
             await message.answer(get_message("ONBOARDING_COMPLETE", user or message.from_user, bonus=WELCOME_BONUS), reply_markup=match_kb)
             
+            # Show instructions with button
+            from src.handlers.system import show_instructions_with_button
+            await show_instructions_with_button(message.bot, user or message.from_user, message.chat.id)
+            
             # Show first question without welcome message
             from src.handlers.groups import show_group_main_flow  
             await show_group_main_flow(message, user_id, group_id)

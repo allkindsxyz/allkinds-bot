@@ -1,7 +1,8 @@
-from aiogram import types, F, Router
+from aiogram import types, Router
 from aiogram.filters import CommandStart, Command
 from aiogram.fsm.context import FSMContext
-from src.texts.messages import INSTRUCTIONS_TEXT, GROUPS_WELCOME_ADMIN, GROUPS_WELCOME, GROUPS_PROFILE_SETUP, GROUPS_FIND_MATCH, GROUPS_SELECT, get_message, TOKEN_EXTEND, TOKEN_EXTENDED, BTN_SWITCH_TO, BTN_CREATE_GROUP
+from aiogram import F
+from src.texts.messages import INSTRUCTIONS_TEXT, GROUPS_WELCOME_ADMIN, GROUPS_WELCOME, GROUPS_PROFILE_SETUP, GROUPS_FIND_MATCH, GROUPS_SELECT, get_message, TOKEN_EXTEND, TOKEN_EXTENDED, BTN_SWITCH_TO, BTN_CREATE_GROUP, BTN_GOT_IT
 from src.loader import bot, dp, redis, VERSION
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeyboardRemove
 from src.services.questions import get_next_unanswered_question
@@ -128,6 +129,7 @@ async def send_pending_connection_requests(bot, user_id: int):
     return requests_sent
 
 async def hide_instructions_and_mygroups_by_message(message, state):
+    """Hide previous instructions and mygroups messages by message reference"""
     data = await state.get_data()
     msg_id = data.get("instructions_msg_id")
     if msg_id:
@@ -135,13 +137,26 @@ async def hide_instructions_and_mygroups_by_message(message, state):
             await message.bot.delete_message(message.chat.id, msg_id)
         except Exception:
             pass
-    ids = data.get("my_groups_msg_ids", [])
-    for mid in ids:
+    group_msg_ids = data.get('my_groups_msg_ids', [])
+    for msg_id in group_msg_ids:
         try:
-            await message.bot.delete_message(message.chat.id, mid)
+            await message.bot.delete_message(message.chat.id, msg_id)
         except Exception:
             pass
     await state.update_data(instructions_msg_id=None, my_groups_msg_ids=[])
+
+async def show_instructions_with_button(bot, user, chat_id: int) -> int:
+    """Show instructions with 'Got it' button. Returns message_id."""
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text=get_message(BTN_GOT_IT, user=user), callback_data="got_it_instructions")]
+    ])
+    msg = await bot.send_message(
+        chat_id, 
+        get_message(INSTRUCTIONS_TEXT, user=user), 
+        parse_mode="HTML", 
+        reply_markup=kb
+    )
+    return msg.message_id
 
 @router.message(Command("instructions"))
 async def instructions(message: types.Message, state: FSMContext):
@@ -157,8 +172,10 @@ async def instructions(message: types.Message, state: FSMContext):
         async with AsyncSessionLocal() as session:
             user = await session.execute(select(User).where(User.id == user_id))
             user = user.scalar()
-        msg = await message.answer(get_message(INSTRUCTIONS_TEXT, user or message.from_user), parse_mode="HTML")
-        await state.update_data(instructions_msg_id=msg.message_id)
+        
+        # Use new function with button
+        msg_id = await show_instructions_with_button(message.bot, user or message.from_user, message.chat.id)
+        await state.update_data(instructions_msg_id=msg_id)
         # --- Version check ---
         user_data = await state.get_data()
         user_version = user_data.get('bot_version')
@@ -485,3 +502,13 @@ async def cmd_migrate_questions(message: types.Message):
         import logging
         logging.exception("Error in migrate_questions command")
         await message.answer(f"❌ Error during migration: {str(e)}") 
+
+@router.callback_query(F.data == "got_it_instructions")
+async def cb_got_it_instructions(callback: types.CallbackQuery):
+    """Handle 'Got it' button for instructions"""
+    try:
+        await callback.message.delete()
+        await callback.answer()
+    except Exception as e:
+        import logging
+        logging.exception(f"Error in cb_got_it_instructions: {e}") 

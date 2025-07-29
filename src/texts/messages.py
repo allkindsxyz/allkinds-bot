@@ -87,12 +87,16 @@ MESSAGES = {
         "MATCH_REQUEST_BLOCKED": "🚫 {nickname} decided not to communicate with you 😞",
         # --- System/General ---
         "INSTRUCTIONS_TEXT": (
-            "👋 Welcome to Allkinds! Here, you can find people who might truly connect with you — not just by chance, but by shared values. Here's how it works:  "
-            "\n❓ Think about what really matters to you — and turn it into a yes/no question. Just type and send it like a normal message. (+10💎)  "
-            "\n☝️ All questions in this group were asked by other members. Answer them and get +1💎  "
-            "\n🔍 At any moment, there's someone in the group whose answers match yours better than anyone else's. Find that person using the Who's Vibing button. (-5💎)  "
-            "\n🧩 You can connect with your match, leave it for later, or block them if you're not interested.  "
-            "\n💬 Start a private chat. If it clicks — exchange contacts and meet IRL!  (-10💎) "
+            "🎯 How Allkinds works:\n\n"
+            "❓ Ask questions that matter to you (+10💎)\n"
+            "Just type your yes/no question and send it\n\n"
+            "✅ Answer questions from others (+1💎)\n"
+            "Every answer helps you find better matches\n\n"
+            "🔍 Find your best match (-5💎)\n"
+            "Use \"Who's vibing\" to see who matches you most\n\n"
+            "🤝 Connect with people you like\n"
+            "Send connection requests and exchange contacts\n\n"
+            "💎 Earn points by participating, spend them on matches"
         ),
         # --- Buttons ---
         "BTN_CREATE_GROUP": "🌀 Kick off a new group",
@@ -115,6 +119,7 @@ MESSAGES = {
         "BTN_DECLINE_MATCH": "❌ Decline",
         "BTN_BLOCK_MATCH": "🚫 Block",
         "BTN_GO_TO_CHAT": "💬 Go to Chat",
+        "BTN_GOT_IT": "✅ Got it",
         "NO_AVAILABLE_ANSWERED_QUESTIONS": "🫥 You answered some Qs, but they were deleted—nothing to review.",
         "UNANSWERED_QUESTIONS_MSG": "🕑 You have <b>{count}</b> unanswered question(s) left.",
         "BTN_LOAD_UNANSWERED": "🔄 Load unanswered questions",
@@ -209,14 +214,16 @@ MESSAGES = {
         "MATCH_REQUEST_BLOCKED": "🚫 {nickname} решил не общаться с тобой 😞",
         # --- System/General ---
         "INSTRUCTIONS_TEXT": (
-            "👋 Добро пожаловать в Allkinds! Здесь ты можешь найти людей, с которыми действительно есть шанс на контакт — не случайный, а основанный на общих ценностях. Вот как это работает:  "
-            "❓ Подумай, что для тебя действительно важно в человеке и сформулируй это как вопрос с ответом \"да\" или \"нет\". Просто напиши его и отправь, как обычное сообщение. (+10💎)  "
-            "\n☝️ Все вопросы в этой группе были заданы другими участниками. Отвечай на них и получай +1💎  "
-            "\n🔍 В любой момент есть кто-то в группе, чьи ответы совпадают с твоими больше всёех остальных. Найди этого человека, используя кнопку «🔍 Кто сейчас резонирует больше всех». (-5💎)  "
-            "\n🧩 Ты можешь связаться со своим совпадением, оставить на потом или заблокировать, если не интересно.  "
-            "\n💬 Начни приватный чат. Если клик — обменяйтесь контактами и встретьтесь в реале!  (-10💎) "
-            "\n "
-            "\n💎 В настоящий момент 💎 - это просто поинты. В дальнейшем за ними будет стоять реальная монета. "
+            "🎯 Как работает Allkinds:\n\n"
+            "❓ Задавай важные для тебя вопросы (+10💎)\n"
+            "Просто напиши свой да/нет вопрос и отправь\n\n"
+            "✅ Отвечай на вопросы других (+1💎)\n"
+            "Каждый ответ помогает найти лучшие совпадения\n\n"
+            "🔍 Найди лучшее совпадение (-5💎)\n"
+            "Используй \"Кто резонирует\", чтобы увидеть кто подходит тебе больше всего\n\n"
+            "🤝 Связывайся с теми, кто нравится\n"
+            "Отправляй запросы на связь и обменивайтесь контактами\n\n"
+            "💎 Зарабатывай поинты участием, трать их на поиск совпадений"
         ),
         # --- Buttons ---
         "BTN_CREATE_GROUP": "🌀 Запустить новую группу",
@@ -239,7 +246,8 @@ MESSAGES = {
         "BTN_DECLINE_MATCH": "❌ Отклонить",
         "BTN_BLOCK_MATCH": "🚫 Заблокировать",
         "BTN_GO_TO_CHAT": "💬 Перейти в чат",
-        "NO_AVAILABLE_ANSWERED_QUESTIONS": "🫥 Ты отвечал на вопросы, но они были удалены.",
+        "BTN_GOT_IT": "✅ Понятно",
+        "NO_AVAILABLE_ANSWERED_QUESTIONS": "🫥 Ты отвечал на вопросы, но они были удалены — нечего пересматривать.",
         "UNANSWERED_QUESTIONS_MSG": "🕑 У тебя осталось <b>{count}</b> неотвеченных вопрос(ов).",
         "BTN_LOAD_UNANSWERED": "🔄 Загрузить неотвеченные вопросы",
         "TOKEN_EXPIRE_REMINDER": "⏳ Твой токен вот-вот истечёт. Нажми кнопку, чтобы продлить свой аккаунт.",
@@ -357,9 +365,10 @@ BTN_WHO_IS_VIBING = "BTN_WHO_IS_VIBING"
 BTN_CONNECT = "BTN_CONNECT"
 BTN_ACCEPT_MATCH = "BTN_ACCEPT_MATCH"
 BTN_REJECT_MATCH = "BTN_REJECT_MATCH"
+BTN_DECLINE_MATCH = "BTN_DECLINE_MATCH" 
 BTN_BLOCK_MATCH = "BTN_BLOCK_MATCH"
-BTN_DECLINE_MATCH = "BTN_DECLINE_MATCH"
 BTN_GO_TO_CHAT = "BTN_GO_TO_CHAT"
+BTN_GOT_IT = "BTN_GOT_IT"
 
 NO_AVAILABLE_ANSWERED_QUESTIONS = "NO_AVAILABLE_ANSWERED_QUESTIONS"
 
