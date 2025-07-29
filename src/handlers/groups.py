@@ -532,7 +532,7 @@ async def process_invite_code(message: types.Message, state: FSMContext):
         data = await state.get_data()
         current_state = await state.get_state()
         if not current_state:  # No onboarding state set
-    await state.clear()
+            await state.clear()
             await state.update_data(internal_user_id=user_id)
 
 @router.callback_query(F.data.startswith("find_match_"))
@@ -651,7 +651,7 @@ async def show_match_with_navigation(callback_or_message, user, matches: list, i
                 # For navigation, always delete and send new photo to ensure photo updates
                 await callback_or_message.message.delete()
                 await callback_or_message.message.answer_photo(match['photo_url'], caption=text, reply_markup=kb, parse_mode="HTML")
-        else:
+            else:
                 # Delete text message and send photo
                 await callback_or_message.message.delete()
                 await callback_or_message.message.answer_photo(match['photo_url'], caption=text, reply_markup=kb, parse_mode="HTML")
