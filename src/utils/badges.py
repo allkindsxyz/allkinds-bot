@@ -107,14 +107,15 @@ async def send_initial_badge_if_needed(bot, user_id: int, group_id: Optional[int
     # Send specific pending questions if any
     if group_id:
         try:
-            question = await get_next_unanswered_question(user_id, group_id)
-            if question:
-                from src.handlers.questions import send_question_to_user
-                from src.db import AsyncSessionLocal
-                from src.models import User
-                from sqlalchemy import select
-                
-                async with AsyncSessionLocal() as session:
+            from src.db import AsyncSessionLocal
+            from src.models import User
+            from sqlalchemy import select
+            
+            async with AsyncSessionLocal() as session:
+                question = await get_next_unanswered_question(session, group_id, user_id)
+                if question:
+                    from src.handlers.questions import send_question_to_user
+                    
                     user = await session.execute(select(User).where(User.id == user_id))
                     user = user.scalar()
                     if user:
