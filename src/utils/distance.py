@@ -39,6 +39,12 @@ def get_match_distance_info(member1: GroupMember, member2: GroupMember) -> str:
     - If different countries: "📍 Moscow, Russia"
     - If no location data: "📍 Location not specified"
     """
+    import logging
+    
+    # Debug logging
+    logging.warning(f"[get_match_distance_info] member1: lat={getattr(member1, 'geolocation_lat', None)}, lon={getattr(member1, 'geolocation_lon', None)}, city={getattr(member1, 'city', None)}, country={getattr(member1, 'country', None)}")
+    logging.warning(f"[get_match_distance_info] member2: lat={getattr(member2, 'geolocation_lat', None)}, lon={getattr(member2, 'geolocation_lon', None)}, city={getattr(member2, 'city', None)}, country={getattr(member2, 'country', None)}")
+    
     # Check if both users have GPS coordinates
     if all([
         member1.geolocation_lat, member1.geolocation_lon,

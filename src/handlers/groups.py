@@ -628,13 +628,14 @@ async def show_match_with_navigation(callback_or_message, user, matches: list, i
         if nav_row:
             nav_buttons.append(nav_row)
     
-        kb = types.InlineKeyboardMarkup(inline_keyboard=[
+    # Create keyboard with navigation buttons (if any) and action buttons
+    kb = types.InlineKeyboardMarkup(inline_keyboard=[
         *nav_buttons,
         # [types.InlineKeyboardButton(text=get_message(MATCH_AI_CHEMISTRY, user=user, points=POINTS_TO_CONNECT), callback_data=f"match_chat_{match['user_id']}")],  # Commented out - will return later
         [types.InlineKeyboardButton(text=get_message("BTN_CONNECT", user=user), callback_data=f"connect_{match['user_id']}")],
-            [types.InlineKeyboardButton(text=get_message(MATCH_SHOW_AGAIN, user=user), callback_data=f"match_postpone_{match['user_id']}")],
-            [types.InlineKeyboardButton(text=get_message(MATCH_DONT_SHOW, user=user), callback_data=f"match_hide_{match['user_id']}")]
-        ])
+        [types.InlineKeyboardButton(text=get_message(MATCH_SHOW_AGAIN, user=user), callback_data=f"match_postpone_{match['user_id']}")],
+        [types.InlineKeyboardButton(text=get_message(MATCH_DONT_SHOW, user=user), callback_data=f"match_hide_{match['user_id']}")]
+    ])
     
     if hasattr(callback_or_message, 'message'):  # It's a callback
         # Store matches in state for navigation
