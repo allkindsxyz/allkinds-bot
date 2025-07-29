@@ -877,7 +877,7 @@ async def cb_ban_user(callback: types.CallbackQuery, state: FSMContext):
                     pass
 
 async def send_approved_question_to_users(bot, question, author_user):
-    """Send approved question to author first, then to all group members"""
+    """Send approved question to author first, then to all group members including admin"""
     # Send to author first
     await send_question_to_user(bot, author_user, question)
     
@@ -899,19 +899,20 @@ async def send_approved_question_to_users(bot, question, author_user):
                 # Skip author since they already got the question
                 if user.id == author_user.id:
                     continue
+                
+                # Admin should ALWAYS get approved questions in the group
+                if user.id == admin_user_id:
+                    await send_question_to_user(bot, user, question)
+                    # No badge notification for admin (they just approved it)
+                    continue
                     
-                # Check if user has unanswered questions in queue
+                # For other members: check queue and send accordingly
                 unanswered_count = await get_unanswered_questions_count(user.id, question.group_id)
                 
                 if unanswered_count == 0:  # Queue is empty, push immediately
                     await send_question_to_user(bot, user, question)
-                    
-                    # Send badge notification only to non-admin users
-                    # Admin already knows about the question since they just approved it
-                    if user.id != admin_user_id:
-                        await send_badge_notification(bot, user.id, "📝 New question available!")
+                    await send_badge_notification(bot, user.id, "📝 New question available!")
                 else:
                     # User has questions in queue, just send badge notification
                     # Question will be shown when they finish current queue
-                    if user.id != admin_user_id:
-                        await send_badge_notification(bot, user.id, "📝 New question available!")
+                    await send_badge_notification(bot, user.id, "📝 New question available!")

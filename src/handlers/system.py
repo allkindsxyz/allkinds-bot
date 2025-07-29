@@ -26,11 +26,13 @@ async def send_pending_connection_requests(bot, user_id: int):
     from src.utils.redis import get_telegram_user_id
     from src.services.groups import find_best_match
     
+    requests_sent = False
+    
     async with AsyncSessionLocal() as session:
         user = await session.execute(select(User).where(User.id == user_id))
         user = user.scalar()
         if not user or not user.current_group_id:
-            return
+            return requests_sent
         
         # Найти все входящие пендинг запросы для этого пользователя
         pending_requests = await session.execute(select(MatchStatus).where(
@@ -41,7 +43,7 @@ async def send_pending_connection_requests(bot, user_id: int):
         pending_requests = pending_requests.scalars().all()
         
         if not pending_requests:
-            return
+            return requests_sent
         
         member = await session.execute(select(GroupMember).where(
             GroupMember.user_id == user_id, 
@@ -113,10 +115,14 @@ async def send_pending_connection_requests(bot, user_id: int):
                 else:
                     await bot.send_message(user_telegram_id, match_text, 
                                          reply_markup=kb, parse_mode="HTML")
+                
+                requests_sent = True
                     
             except Exception as e:
                 import logging
                 logging.error(f"[send_pending_connection_requests] Failed to send request from user_id={initiator_user.id} to user_id={user_id}: {e}")
+    
+    return requests_sent
 
 async def hide_instructions_and_mygroups_by_message(message, state):
     data = await state.get_data()

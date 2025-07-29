@@ -93,31 +93,46 @@ async def send_badge_notification(bot, user_id: int, message: str, increment_onl
 
 async def send_initial_badge_if_needed(bot, user_id: int, group_id: Optional[int] = None) -> bool:
     """
-    Send initial badge notification if user has pending items
-    Called on /start to show current badge count
+    Send specific pending items instead of generic badge notification
+    Called on /start to show current pending questions and match requests
     
     Returns:
-        True if badge notification was sent, False if no items to badge
+        True if any pending items were sent, False if no items to show
     """
-    total_count = await get_total_badge_count(user_id, group_id)
+    from src.services.questions import get_next_unanswered_question
+    from src.handlers.system import send_pending_connection_requests
     
-    if total_count == 0:
-        return False
+    items_sent = False
     
-    # Send notification for each pending item to build up badge
-    # This is a workaround since we can't set badge to specific number
-    for i in range(total_count):
-        if i == 0:
-            message = "📝 You have pending questions and matches!"
-        else:
-            message = "📝"  # Silent increments
-        
-        success = await send_badge_notification(bot, user_id, message, increment_only=False)
-        if not success:
-            break
+    # Send specific pending questions if any
+    if group_id:
+        try:
+            question = await get_next_unanswered_question(user_id, group_id)
+            if question:
+                from src.handlers.questions import send_question_to_user
+                from src.db import AsyncSessionLocal
+                from src.models import User
+                from sqlalchemy import select
+                
+                async with AsyncSessionLocal() as session:
+                    user = await session.execute(select(User).where(User.id == user_id))
+                    user = user.scalar()
+                    if user:
+                        await send_question_to_user(bot, user, question)
+                        items_sent = True
+        except Exception as e:
+            logging.exception(f"[send_initial_badge] Error sending pending question: {e}")
     
-    logging.info(f"[send_initial_badge] user_id={user_id}, sent {total_count} badge increments")
-    return total_count > 0 
+    # Send specific pending match requests if any
+    try:
+        match_requests_sent = await send_pending_connection_requests(bot, user_id)
+        if match_requests_sent:
+            items_sent = True
+    except Exception as e:
+        logging.exception(f"[send_initial_badge] Error sending pending matches: {e}")
+    
+    logging.info(f"[send_initial_badge] user_id={user_id}, items_sent={items_sent}")
+    return items_sent
 
 
 async def log_badge_decrement(user_id: int, reason: str) -> None:
