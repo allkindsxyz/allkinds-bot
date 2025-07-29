@@ -164,10 +164,30 @@ async def cb_answer_question(callback: types.CallbackQuery, state: FSMContext):
         # Пушим следующий неотвеченный вопрос, если есть (через сервис)
         next_q = await get_next_unanswered_question(session, question.group_id, user.id)
         if next_q:
-            logging.warning(f"[cb_answer_question] Push next unanswered: user_id={user.id}, question_id={next_q.id}")
+            logging.warning(f"[cb_answer_question] Push next unanswered: user_id={user.id}, question_id={next_q.id}, text={next_q.text[:50]}...")
             await send_question_to_user(callback.bot, user, next_q)
         else:
-            logging.warning(f"[cb_answer_question] No more unanswered for user_id={user.id}")
+            # Debug: check if there are any approved questions at all
+            all_questions = await session.execute(
+                select(Question).where(
+                    Question.group_id == question.group_id,
+                    Question.is_deleted == 0,
+                    Question.status == "approved"
+                )
+            )
+            all_approved = all_questions.scalars().all()
+            
+            # Debug: check user's answers
+            user_answers = await session.execute(
+                select(Answer).where(Answer.user_id == user.id)
+            )
+            user_answer_count = len(user_answers.scalars().all())
+            
+            logging.warning(f"[cb_answer_question] No more unanswered for user_id={user.id}. Total approved questions: {len(all_approved)}, User answers: {user_answer_count}")
+            for q in all_approved:
+                ans = await session.execute(select(Answer).where(and_(Answer.question_id == q.id, Answer.user_id == user.id)))
+                has_answer = ans.scalar() is not None
+                logging.warning(f"  Question {q.id}: '{q.text[:30]}...' - Has answer: {has_answer}")
         # Update badge after answer (always)
         await update_badge_after_answer(callback.bot, user, question.group_id)
 
@@ -232,7 +252,7 @@ async def cb_load_answered_questions(callback: types.CallbackQuery, state: FSMCo
         answers_query = select(Answer).where(
                 Answer.user_id == user.id,
                 Answer.value.isnot(None),
-                Answer.question_id.in_(select(Question.id).where(Question.group_id == group_id, Question.is_deleted == 0))
+                Answer.question_id.in_(select(Question.id).where(Question.group_id == group_id, Question.is_deleted == 0, Question.status == "approved"))
         ).order_by(Answer.created_at)
         answers = await session.execute(answers_query.limit(ANSWERED_PAGE_SIZE))
         answers = answers.scalars().all()
@@ -247,13 +267,13 @@ async def cb_load_answered_questions(callback: types.CallbackQuery, state: FSMCo
         total_count_query = select(Answer).where(
                 Answer.user_id == user.id,
                 Answer.value.isnot(None),
-                Answer.question_id.in_(select(Question.id).where(Question.group_id == group_id, Question.is_deleted == 0))
+                Answer.question_id.in_(select(Question.id).where(Question.group_id == group_id, Question.is_deleted == 0, Question.status == "approved"))
             )
         total_count = await session.execute(total_count_query)
         total_count = len(total_count.scalars().all())
         print(f"[DEBUG] cb_load_answered_questions: total_count={total_count}, page=0, offset={ANSWERED_PAGE_SIZE}")
         # Log all questions
-        questions_query = select(Question).where(Question.group_id == group_id, Question.is_deleted == 0)
+        questions_query = select(Question).where(Question.group_id == group_id, Question.is_deleted == 0, Question.status == "approved")
         questions = await session.execute(questions_query)
         questions = questions.scalars().all()
         print(f"[DEBUG] cb_load_answered_questions: questions_ids={[q.id for q in questions]}")
@@ -291,7 +311,7 @@ async def cb_load_answered_questions_more(callback: types.CallbackQuery, state: 
         answers_query = select(Answer).where(
                 Answer.user_id == user.id,
                 Answer.value.isnot(None),
-                Answer.question_id.in_(select(Question.id).where(Question.group_id == group_id, Question.is_deleted == 0))
+                Answer.question_id.in_(select(Question.id).where(Question.group_id == group_id, Question.is_deleted == 0, Question.status == "approved"))
             ).order_by(Answer.created_at).offset(offset).limit(ANSWERED_PAGE_SIZE)
         answers = await session.execute(answers_query)
         answers = answers.scalars().all()
@@ -311,13 +331,13 @@ async def cb_load_answered_questions_more(callback: types.CallbackQuery, state: 
         total_count_query = select(Answer).where(
             Answer.user_id == user.id,
             Answer.value.isnot(None),
-            Answer.question_id.in_(select(Question.id).where(Question.group_id == group_id, Question.is_deleted == 0))
+            Answer.question_id.in_(select(Question.id).where(Question.group_id == group_id, Question.is_deleted == 0, Question.status == "approved"))
         )
         total_count = await session.execute(total_count_query)
         total_count = len(total_count.scalars().all())
         print(f"[DEBUG] cb_load_answered_questions_more: total_count={total_count}, page={page}, offset={offset}")
         # Log all questions
-        questions_query = select(Question).where(Question.group_id == group_id, Question.is_deleted == 0)
+        questions_query = select(Question).where(Question.group_id == group_id, Question.is_deleted == 0, Question.status == "approved")
         questions = await session.execute(questions_query)
         questions = questions.scalars().all()
         print(f"[DEBUG] cb_load_answered_questions_more: questions_ids={[q.id for q in questions]}")
@@ -349,7 +369,8 @@ async def cb_load_unanswered(callback: types.CallbackQuery, state: FSMContext):
         questions = await session.execute(
             select(Question).where(
                 Question.group_id == user.current_group_id,
-                Question.is_deleted == 0
+                Question.is_deleted == 0,
+                Question.status == "approved"
             ).order_by(Question.created_at)
         )
         questions = questions.scalars().all()

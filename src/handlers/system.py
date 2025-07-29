@@ -257,20 +257,32 @@ async def start(message: types.Message, state: FSMContext):
         async with AsyncSessionLocal() as session:
             user_obj = await session.execute(select(User).where(User.id == internal_user_id))
             user_obj = user_obj.scalar()
+            # Check if user has current group AND is actually a member of that group
             if user_obj and user_obj.current_group_id:
-                questions = await session.execute(
-                    select(Question).where(
-                        Question.group_id == user_obj.current_group_id,
-                        Question.is_deleted == 0
-                    ).order_by(Question.created_at)
-                )
-                questions = questions.scalars().all()
-                for q in questions:
-                    ans = await session.execute(select(Answer).where(and_(Answer.question_id == q.id, Answer.user_id == user_obj.id)))
-                    ans = ans.scalar()
-                    if not ans:
-                        await send_question_to_user(message.bot, user_obj, q)
-                        break
+                # Verify user is actually a member of the current group
+                member_check = await session.execute(select(GroupMember).where(
+                    GroupMember.user_id == user_obj.id,
+                    GroupMember.group_id == user_obj.current_group_id
+                ))
+                if not member_check.scalar():
+                    # User has current_group_id but is not a member - reset it
+                    user_obj.current_group_id = None
+                    await session.commit()
+                else:
+                    questions = await session.execute(
+                        select(Question).where(
+                            Question.group_id == user_obj.current_group_id,
+                            Question.is_deleted == 0,
+                            Question.status == "approved"
+                        ).order_by(Question.created_at)
+                    )
+                    questions = questions.scalars().all()
+                    for q in questions:
+                        ans = await session.execute(select(Answer).where(and_(Answer.question_id == q.id, Answer.user_id == user_obj.id)))
+                        ans = ans.scalar()
+                        if not ans:
+                            await send_question_to_user(message.bot, user_obj, q)
+                            break
         
         # --- PUSH пендинг входящих запросов на подключение ---
         await send_pending_connection_requests(message.bot, internal_user_id)
