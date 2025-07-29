@@ -604,14 +604,14 @@ async def show_match_with_navigation(callback_or_message, user, matches: list, i
     # Format intro text
     intro_text = ""
     if match.get('intro'):
-        intro_text = f"\n{match['intro']}"
+        intro_text = match['intro']
     
     text = get_message(MATCH_FOUND, user=user, 
                       nickname=match['nickname'], 
                       intro=intro_text,
                       similarity=match['similarity'], 
                       common_questions=match['common_questions'], 
-                      valid_users_count=match['valid_users_count'])
+                      distance_info=match['distance_info'])
     
     # Build navigation buttons
     nav_buttons = []
@@ -909,20 +909,22 @@ async def cb_match_chat(callback: types.CallbackQuery, state: FSMContext):
         if reverse_match and reverse_match.get('user_id') == user.id:
             similarity = reverse_match['similarity']
             common_questions = reverse_match['common_questions']
-            valid_users_count = reverse_match['valid_users_count']
+            distance_info = reverse_match['distance_info']
         else:
             # If couldn't get reverse match, use basic data
             similarity = 85  # fallback
             common_questions = 3  # fallback
-            valid_users_count = 2  # fallback
+            # Calculate distance info manually
+            from src.utils.distance import get_match_distance_info
+            distance_info = get_match_distance_info(match_member, member) if match_member and member else "📍 Location not specified"
         
         # First message about connection request
         request_text = get_message(MATCH_INCOMING_REQUEST, user=match_user, nickname=member.nickname if member else "Unknown")
         
         # Then match card
-        intro_text = f"\n{member.intro}" if member and member.intro else ""
+        intro_text = member.intro if member and member.intro else ""
         match_text = get_message(MATCH_FOUND, user=match_user, nickname=member.nickname if member else "Unknown", 
-                               intro=intro_text, similarity=similarity, common_questions=common_questions, valid_users_count=valid_users_count)
+                               intro=intro_text, similarity=similarity, common_questions=common_questions, distance_info=distance_info)
         
         # Buttons for accept/decline/block
         kb = types.InlineKeyboardMarkup(inline_keyboard=[
@@ -1120,23 +1122,30 @@ async def send_connection_request_to_user(bot, initiator_user_id: int, target_us
             if reverse_match and reverse_match.get('user_id') == initiator_user_id:
                 similarity = reverse_match['similarity']
                 common_questions = reverse_match['common_questions']
-                valid_users_count = reverse_match['valid_users_count']
+                distance_info = reverse_match['distance_info']
             else:
                 # Fallback values
                 similarity = 85
                 common_questions = 3
-                valid_users_count = 2
+                # Calculate distance info manually
+                from src.utils.distance import get_match_distance_info
+                target_member = await session.execute(select(GroupMember).where(
+                    GroupMember.user_id == target_user_id,
+                    GroupMember.group_id == group_id
+                ))
+                target_member = target_member.scalar()
+                distance_info = get_match_distance_info(target_member, initiator_member) if target_member else "📍 Location not specified"
             
             # First message about connection request
             request_text = get_message("MATCH_INCOMING_REQUEST", user=target, 
                                      nickname=initiator_member.nickname if initiator_member else "Unknown")
             
             # Then match card
-            intro_text = f"\n{initiator_member.intro}" if initiator_member and initiator_member.intro else ""
+            intro_text = initiator_member.intro if initiator_member and initiator_member.intro else ""
             match_text = get_message("MATCH_FOUND", user=target, 
                                    nickname=initiator_member.nickname if initiator_member else "Unknown", 
                                    intro=intro_text, similarity=similarity, 
-                                   common_questions=common_questions, valid_users_count=valid_users_count)
+                                   common_questions=common_questions, distance_info=distance_info)
             
             # Buttons for accept/decline/block
             kb = types.InlineKeyboardMarkup(inline_keyboard=[

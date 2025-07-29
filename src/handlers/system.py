@@ -66,12 +66,14 @@ async def send_pending_connection_requests(bot, user_id: int):
             if reverse_match and reverse_match.get('user_id') == initiator_user.id:
                 similarity = reverse_match['similarity']
                 common_questions = reverse_match['common_questions']
-                valid_users_count = reverse_match['valid_users_count']
+                distance_info = reverse_match['distance_info']
             else:
                 # Fallback значения
                 similarity = 85
                 common_questions = 3
-                valid_users_count = 2
+                # Calculate distance manually
+                from src.utils.distance import get_match_distance_info
+                distance_info = get_match_distance_info(member, initiator_member) if member else "📍 Location not specified"
             
             try:
                 # Отправить уведомление о запросе
@@ -79,11 +81,11 @@ async def send_pending_connection_requests(bot, user_id: int):
                                          nickname=initiator_member.nickname if initiator_member else "Unknown")
                 
                 # Карточка мэтча
-                intro_text = f"\n{initiator_member.intro}" if initiator_member and initiator_member.intro else ""
+                intro_text = initiator_member.intro if initiator_member and initiator_member.intro else ""
                 match_text = get_message("MATCH_FOUND", user=user, 
                                        nickname=initiator_member.nickname if initiator_member else "Unknown", 
                                        intro=intro_text, similarity=similarity, 
-                                       common_questions=common_questions, valid_users_count=valid_users_count)
+                                       common_questions=common_questions, distance_info=distance_info)
                 
                 # Кнопки для ответа
                 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton

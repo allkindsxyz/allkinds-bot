@@ -71,7 +71,7 @@ MESSAGES = {
         "QUESTION_DELETE": "🗑 Delete",
         # --- Match ---
         "MATCH_NO_VALID": "🤔 No matches yet. Answer a few more to find them!",
-        "MATCH_FOUND": "🎉 <b>{nickname}</b>{intro}\nMatch: <b>{similarity}%</b> ({common_questions} questions, from {valid_users_count} people)",
+        "MATCH_FOUND": "🎉 {nickname}, {similarity}% ({common_questions} questions), {distance_info}\n{intro}",
         "MATCH_AI_CHEMISTRY": "💬 Start a private chat",
         "MATCH_SHOW_AGAIN": "🔁 Show again later",
         "MATCH_DONT_SHOW": "🚫 Don't show again",
@@ -193,7 +193,7 @@ MESSAGES = {
         "QUESTION_DELETE": "🗑 Удалить",
         # --- Match ---
         "MATCH_NO_VALID": "🤔 Совпадений пока нет. Ответь ещё на несколько вопросов или задай свои!",
-        "MATCH_FOUND": "🎉 <b>{nickname}</b>{intro}\nСовпадение: <b>{similarity}%</b> ({common_questions} вопросов, из {valid_users_count} человек)",
+        "MATCH_FOUND": "🎉 {nickname}, {similarity}% ({common_questions} questions), {distance_info}\n{intro}",
         "MATCH_AI_CHEMISTRY": "💬 Начать приватный чат",
         "MATCH_SHOW_AGAIN": "🔁 Показать позже снова",
         "MATCH_DONT_SHOW": "🚫 Больше не показывать",

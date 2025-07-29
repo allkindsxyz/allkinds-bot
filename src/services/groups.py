@@ -416,10 +416,15 @@ async def find_best_match(user_id: int, group_id: int, exclude_user_ids: list[in
                 best_score = percent
                 best_match = member
                 best_common_questions = total
-        if best_match:
+        if best_match and best_score >= 80:
             # Get match nickname and photo
             match_user = await session.execute(select(User).where(User.id == best_match.user_id))
             match_user = match_user.scalar()
+            
+            # Calculate distance information
+            from src.utils.distance import get_match_distance_info
+            distance_info = get_match_distance_info(current_member, best_match)
+            
             return {
                 "user_id": best_match.user_id,
                 "nickname": best_match.nickname,
@@ -427,7 +432,8 @@ async def find_best_match(user_id: int, group_id: int, exclude_user_ids: list[in
                 "intro": best_match.intro,
                 "similarity": best_score,
                 "common_questions": best_common_questions,
-                "valid_users_count": valid_users_count
+                "valid_users_count": valid_users_count,
+                "distance_info": distance_info
             }
         if not_enough_common:
             return {"not_enough_common": True}
@@ -532,6 +538,10 @@ async def find_all_matches(user_id: int, group_id: int, exclude_user_ids: list[i
             max_distance = 4 * len(common_questions)
             similarity = round((1 - distance / max_distance) * 100)
             
+            # Calculate distance information
+            from src.utils.distance import get_match_distance_info
+            distance_info = get_match_distance_info(current_member, member)
+            
             matches.append({
                 "user_id": member.user_id,
                 "nickname": member.nickname,
@@ -539,7 +549,8 @@ async def find_all_matches(user_id: int, group_id: int, exclude_user_ids: list[i
                 "intro": member.intro,
                 "similarity": similarity,
                 "common_questions": len(common_questions),
-                "valid_users_count": len(filtered_members)
+                "valid_users_count": len(filtered_members),
+                "distance_info": distance_info
             })
         
         # Sort by similarity descending
