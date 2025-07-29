@@ -110,7 +110,7 @@ async def show_group_main_flow(message, user_id, group_id):
     from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
     from src.texts.messages import get_message, QUESTION_LOAD_ANSWERED, GROUPS_REVIEW_ANSWERED
     from src.models import User, Answer, Question
-    from sqlalchemy import select
+    from sqlalchemy import select, and_
     async with AsyncSessionLocal() as session:
         user = await session.execute(select(User).where(User.id == user_id))
         user = user.scalar()
@@ -121,7 +121,7 @@ async def show_group_main_flow(message, user_id, group_id):
             select(Answer).where(
                 Answer.user_id == user.id,
                 Answer.value.isnot(None),
-                Answer.question_id.in_(select(Question.id).where(Question.group_id == group_id, Question.is_deleted == 0))
+                Answer.question_id.in_(select(Question.id).where(Question.group_id == group_id, Question.is_deleted == 0, Question.status == "approved"))
             )
         )
         answers_count = len(answers_count.scalars().all())
@@ -134,8 +134,39 @@ async def show_group_main_flow(message, user_id, group_id):
         # 3. Find and show first unanswered question using dynamic queue
         first_question = await get_next_unanswered_question(session, group_id, user.id)
         if first_question:
+            import logging
+            logging.warning(f"[show_group_main_flow] Found first question: id={first_question.id}, text='{first_question.text[:50]}...', status='{first_question.status}'")
             await send_question_to_user(message.bot, user, first_question)
         else:
+            # Debug: check what questions exist in this group
+            import logging
+            all_questions = await session.execute(
+                select(Question).where(
+                    Question.group_id == group_id,
+                    Question.is_deleted == 0
+                )
+            )
+            all_questions_list = all_questions.scalars().all()
+            approved_questions = [q for q in all_questions_list if q.status == "approved"]
+            pending_questions = [q for q in all_questions_list if q.status == "pending"]
+            rejected_questions = [q for q in all_questions_list if q.status == "rejected"]
+            
+            # Check user's answers
+            user_answers = await session.execute(
+                select(Answer).where(Answer.user_id == user.id)
+            )
+            user_answer_count = len(user_answers.scalars().all())
+            
+            logging.warning(f"[show_group_main_flow] No questions for user_id={user.id}, group_id={group_id}")
+            logging.warning(f"  Total questions: {len(all_questions_list)}")
+            logging.warning(f"  Approved: {len(approved_questions)}, Pending: {len(pending_questions)}, Rejected: {len(rejected_questions)}")
+            logging.warning(f"  User answers: {user_answer_count}")
+            
+            for q in approved_questions[:3]:  # Show first 3 approved
+                ans = await session.execute(select(Answer).where(and_(Answer.question_id == q.id, Answer.user_id == user.id)))
+                has_answer = ans.scalar() is not None
+                logging.warning(f"    Approved Q{q.id}: '{q.text[:30]}...' - User answered: {has_answer}")
+            
             await message.answer(get_message("GROUPS_NO_NEW_QUESTIONS", user=user))
 
 async def show_group_welcome_and_question(message, user_id, group_id):

@@ -216,7 +216,7 @@ async def show_group_main_flow_after_onboarding(message, telegram_user_id, group
             select(Answer).where(
                 Answer.user_id == user.id,
                 Answer.value.isnot(None),
-                Answer.question_id.in_(select(Question.id).where(Question.group_id == group_id, Question.is_deleted == 0))
+                Answer.question_id.in_(select(Question.id).where(Question.group_id == group_id, Question.is_deleted == 0, Question.status == "approved"))
             )
         )
         answers_count = len(answers_count.scalars().all())
