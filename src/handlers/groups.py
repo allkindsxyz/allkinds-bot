@@ -603,7 +603,9 @@ async def cb_find_match(callback: types.CallbackQuery, state: FSMContext):
             if keys:
                 logging.warning(f"[cb_find_match] Found {len(keys)} Redis keys for user {user_id}: {keys}")
                 for key in keys:
-                    if b'matches' in key or b'viewed' in key:
+                    # Decode bytes key to string for comparison
+                    key_str = key.decode('utf-8') if isinstance(key, bytes) else str(key)
+                    if 'matches' in key_str or 'viewed' in key_str:
                         await redis.delete(key)
                         logging.warning(f"[cb_find_match] Deleted Redis key: {key}")
             if cursor == 0:

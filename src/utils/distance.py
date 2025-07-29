@@ -73,11 +73,20 @@ def get_match_distance_info(member1: GroupMember, member2: GroupMember) -> str:
         else:
             return f"📍 {member2.city}"
     
-    # Fallback cases
-    if member2.city:
-        if member2.country:
-            return f"📍 {member2.city}, {member2.country}"
-        else:
-            return f"📍 {member2.city}"
+    # Mixed cases: one has city, other has coordinates
+    # Show available location info
+    if member2.city and member2.country:
+        return f"📍 {member2.city}, {member2.country}"
+    elif member2.city:
+        return f"📍 {member2.city}"
+    elif member1.city and member1.country:
+        return f"📍 Near {member1.city}, {member1.country}"
+    elif member1.city:
+        return f"📍 Near {member1.city}"
+    elif member2.geolocation_lat and member2.geolocation_lon:
+        # Could add reverse geocoding here, but for now just indicate location available
+        return "📍 Location available"
+    elif member1.geolocation_lat and member1.geolocation_lon:
+        return "📍 Location available"
     
     return "📍 Location not specified" 
